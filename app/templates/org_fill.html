@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מילוי עץ ארגוני</title>
+<link rel="stylesheet" href="/static/css/app.css?v=arkia2">
+<style>
+  body{ font-family: system-ui, "Segoe UI", Arial, sans-serif; background:#f8fafc;
+    margin:0; color:#0f172a }
+  .wrap{ max-width:620px; margin:0 auto; padding:20px 16px 60px }
+  .hdr{ background:#123a86; color:#fff; border-radius:14px; padding:18px 20px; margin-bottom:18px }
+  .hdr h1{ margin:0 0 4px; font-size:20px }
+  .hdr .sub{ opacity:.85; font-size:13.5px }
+  .hdr .by{ margin-top:8px; font-size:13px; background:rgba(255,255,255,.14);
+    display:inline-block; padding:4px 10px; border-radius:999px }
+  h2{ font-size:15px; color:#123a86; margin:22px 0 8px }
+  .card{ background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px;
+    margin-bottom:10px }
+  .kid{ display:flex; align-items:center; gap:10px; flex-wrap:wrap }
+  .kid .nm{ font-weight:600 }
+  .kid .tt{ color:#64748b; font-size:13px }
+  .pill{ font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600 }
+  .pill.mgr{ background:#dbeafe; color:#1d4ed8 }
+  .pill.emp{ background:#eef2ff; color:#4f46e5 }
+  .spacer{ flex:1 }
+  label{ display:block; font-size:13px; color:#475569; margin:10px 0 0 }
+  input[type=text]{ width:100%; padding:9px 11px; margin-top:4px; border:1px solid #cbd5e1;
+    border-radius:8px; font-size:15px; box-sizing:border-box }
+  .chk{ display:flex; align-items:center; gap:8px; margin-top:12px; font-size:14px; color:#334155 }
+  .chk input{ width:18px; height:18px }
+  button{ background:#1e63b8; color:#fff; border:0; border-radius:9px; padding:10px 16px;
+    font-size:15px; cursor:pointer; font-weight:600 }
+  button.secondary{ background:#e2e8f0; color:#334155 }
+  button.link{ background:none; color:#64748b; padding:4px 6px; font-weight:400; font-size:13px }
+  .wa{ background:#25d366 }
+  .row{ display:flex; gap:8px; margin-top:14px; flex-wrap:wrap }
+  .done{ background:#dcfce7; color:#166534; border-radius:12px; padding:16px; text-align:center;
+    font-weight:600; margin-bottom:14px }
+  .hint{ color:#64748b; font-size:12.5px; margin-top:2px }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <h1 id="meName">…</h1>
+    <div class="sub" id="meTitle"></div>
+    <div class="by" id="meBy" style="display:none"></div>
+  </div>
+
+  <div id="doneBanner" class="done" style="display:none">✓ סימנת שסיימת למלא. תודה! אפשר עדיין לערוך.</div>
+
+  <h2>👥 הכפופים הישירים אליך</h2>
+  <p class="hint">הוסף/י רק את מי שמדווח/ת ישירות אליך. לכל אחד שהוא <b>מנהל</b> — יופיע כפתור לשליחת קישור אישי כדי שימלא את הצוות שלו.</p>
+  <div id="kids"></div>
+  <div id="noKids" class="hint" style="display:none">עדיין לא הוספת אף אחד.</div>
+
+  <div class="card">
+    <h2 style="margin-top:2px">➕ הוספת כפוף/ה</h2>
+    <label>שם מלא<input type="text" id="c_name" placeholder="שם"></label>
+    <label>תפקיד<input type="text" id="c_title" placeholder="תפקיד"></label>
+    <label class="chk"><input type="checkbox" id="c_mgr"> יש תחתיו/ה אנשים (מנהל/ת)</label>
+    <label id="phoneWrap" style="display:none">טלפון (כדי לשלוח לו/ה קישור בוואטסאפ)
+      <input type="text" id="c_phone" placeholder="050-0000000" dir="ltr"></label>
+    <div class="row"><button onclick="addKid()">הוסף/י</button></div>
+  </div>
+
+  <div class="row">
+    <button class="wa" onclick="submitDone()">✅ סיימתי למלא</button>
+  </div>
+</div>
+
+<script>
+const TOKEN = {{ token | tojson }};
+const API = '/org/api/public/node/' + TOKEN;
+let KIDS = {};   // id -> child, populated on load() for inline editing
+
+function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/'/g,'&#39;'); }
+function waLink(phone, text){
+  const p = (phone||'').replace(/\D/g,'').replace(/^0/, '972');
+  return 'https://wa.me/' + (p||'') + '?text=' + encodeURIComponent(text);
+}
+function fillUrl(token){ return location.origin + '/org/fill/' + token; }
+
+async function api(path, data){
+  const r = await fetch(API + path, {method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify(data||{})});
+  if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || 'שגיאה');
+  return r.json();
+}
+
+document.getElementById('c_mgr').addEventListener('change', e=>{
+  document.getElementById('phoneWrap').style.display = e.target.checked ? '' : 'none';
+});
+
+function escAttr(s){ return esc(s).replace(/"/g,'&quot;'); }
+
+function kidHtml(k){
+  const invite = `היי ${k.name}, בבקשה מלא/י את הכפופים הישירים אליך בעץ הארגוני: ${fillUrl(k.token)}`;
+  const mgr = k.is_manager
+    ? `<span class="pill mgr">מנהל/ת</span>
+       <a class="wa" style="text-decoration:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:13px;font-weight:600"
+          href="${waLink(k.phone, invite)}" target="_blank" rel="noopener">📲 שלח קישור</a>
+       <button class="link" onclick="copyKid('${k.token}')">🔗 העתק</button>`
+    : '<span class="pill emp">עובד/ת</span>';
+  return `<div class="card" id="kid-${k.id}"><div class="kid">
+      <span class="nm">${esc(k.name)}</span>
+      ${k.title?`<span class="tt">${esc(k.title)}</span>`:''}
+      ${mgr}<span class="spacer"></span>
+      <button class="link" onclick="editKid(${k.id})">✏️ עריכה</button>
+      <button class="link" onclick="delKid(${k.id}, '${esc(k.name)}')">🗑 מחיקה</button>
+    </div></div>`;
+}
+
+function editHtml(k){
+  const mgr = k.is_manager;
+  return `<div class="edit">
+    <label>שם מלא<input type="text" id="e_name_${k.id}" value="${escAttr(k.name)}"></label>
+    <label>תפקיד<input type="text" id="e_title_${k.id}" value="${escAttr(k.title)}"></label>
+    <label class="chk"><input type="checkbox" id="e_mgr_${k.id}" ${mgr?'checked':''}
+        onchange="document.getElementById('e_phwrap_${k.id}').style.display=this.checked?'':'none'">
+      יש תחתיו/ה אנשים (מנהל/ת)</label>
+    <label id="e_phwrap_${k.id}" style="display:${mgr?'':'none'}">טלפון (לשליחת קישור בוואטסאפ)
+      <input type="text" id="e_phone_${k.id}" value="${escAttr(k.phone)}" dir="ltr"></label>
+    <div class="row">
+      <button onclick="saveKid(${k.id})">💾 שמירה</button>
+      <button class="secondary" onclick="load()">ביטול</button>
+    </div>
+  </div>`;
+}
+
+function editKid(id){
+  const card = document.getElementById('kid-'+id);
+  if (card && KIDS[id]) card.innerHTML = editHtml(KIDS[id]);
+}
+async function saveKid(id){
+  const name = document.getElementById('e_name_'+id).value.trim();
+  if (!name){ alert('צריך שם'); return; }
+  try{
+    await api('/child/'+id, {
+      name,
+      title: document.getElementById('e_title_'+id).value,
+      is_manager: document.getElementById('e_mgr_'+id).checked,
+      phone: document.getElementById('e_phone_'+id).value });
+  }catch(e){ alert(e.message); return; }
+  load();
+}
+
+async function copyKid(token){
+  try{ await navigator.clipboard.writeText(fillUrl(token)); alert('הקישור הועתק'); }
+  catch(e){ prompt('העתק את הקישור:', fillUrl(token)); }
+}
+
+async function load(){
+  const r = await fetch(API);
+  if (!r.ok){ document.body.innerHTML = '<div class="wrap"><h2>הקישור אינו תקף</h2></div>'; return; }
+  const d = await r.json();
+  document.getElementById('meName').textContent = d.me.name;
+  document.getElementById('meTitle').textContent = d.me.title || '';
+  if (d.appointed_by){
+    const by = document.getElementById('meBy');
+    by.style.display=''; by.textContent = 'מונית ע״י ' + d.appointed_by.name +
+      (d.appointed_by.title ? ' · ' + d.appointed_by.title : '');
+  }
+  document.getElementById('doneBanner').style.display = d.me.status==='filled' ? '' : 'none';
+  KIDS = {}; d.children.forEach(k=>{ KIDS[k.id] = k; });
+  const kids = document.getElementById('kids');
+  document.getElementById('noKids').style.display = d.children.length ? 'none' : '';
+  kids.innerHTML = d.children.map(kidHtml).join('');
+}
+
+async function addKid(){
+  const name = document.getElementById('c_name').value.trim();
+  if (!name){ alert('צריך שם'); return; }
+  const is_manager = document.getElementById('c_mgr').checked;
+  try{
+    await api('/child', { name, title: document.getElementById('c_title').value,
+      is_manager, phone: document.getElementById('c_phone').value });
+  }catch(e){ alert(e.message); return; }
+  document.getElementById('c_name').value=''; document.getElementById('c_title').value='';
+  document.getElementById('c_phone').value=''; document.getElementById('c_mgr').checked=false;
+  document.getElementById('phoneWrap').style.display='none';
+  load();
+}
+async function delKid(id, name){
+  if (!confirm('למחוק את '+name+'?')) return;
+  try{ await api('/child/'+id+'/delete'); }catch(e){ alert(e.message); }
+  load();
+}
+async function submitDone(){
+  try{ await api('/submit'); document.getElementById('doneBanner').style.display=''; }
+  catch(e){ alert(e.message); }
+}
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+:root{ --blue:#1e63b8; --blue-d:#123a86; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; }
+*{ box-sizing:border-box; }
+body{ font-family: system-ui, "Segoe UI", Arial, sans-serif; margin:0; color:var(--ink);
+  background:#f8fafc; }
+a{ color:var(--blue); }
+
+header{ display:flex; align-items:center; justify-content:space-between; gap:12px;
+  background:var(--blue-d); color:#fff; padding:12px 20px; }
+header .brand{ font-weight:700; font-size:17px; }
+header .user{ font-size:13px; opacity:.95; }
+main{ padding:18px 22px 40px; }
+
+h1{ font-size:22px; color:var(--blue-d); margin:6px 0 10px; }
+h2{ color:var(--blue-d); }
+
+button{ background:var(--blue); color:#fff; border:0; border-radius:9px; padding:9px 15px;
+  font-size:14px; font-weight:600; cursor:pointer; }
+button:hover{ background:#1a56a0; }
+button.secondary{ background:#eef2f7; color:#334155; border:1px solid var(--line); }
+button.secondary:hover{ background:#e2e8f0; }
+
+.toolbar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:12px 0; }
+.badge{ display:inline-block; font-size:12px; padding:3px 9px; border-radius:999px;
+  background:#eef2ff; color:#4338ca; }
+.badge.warn{ background:#fef9c3; color:#a16207; }
+
+/* login */
+.loginbg{ min-height:100vh; display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(160deg,#123a86,#1e63b8); }
+.logincard{ background:#fff; border-radius:16px; padding:28px 30px; width:340px; max-width:92vw;
+  box-shadow:0 16px 40px rgba(0,0,0,.25); }
+.logincard h1{ text-align:center; margin:0 0 18px; font-size:19px; }
+.logincard label{ display:block; font-size:13px; color:var(--muted); margin:12px 0 0; }
+.logincard input{ width:100%; padding:10px 12px; margin-top:5px; border:1px solid #cbd5e1;
+  border-radius:9px; font-size:15px; }
+.logincard button{ width:100%; margin-top:18px; padding:11px; }
+.logincard .err{ background:#fee2e2; color:#b91c1c; border-radius:8px; padding:8px 10px;
+  font-size:13px; margin-top:12px; }

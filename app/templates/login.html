@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>התחברות — עץ ארגוני ארקיע</title>
+<link rel="stylesheet" href="/static/css/app.css?v=org1">
+</head>
+<body class="loginbg">
+<form class="logincard" method="post" action="/login">
+  <h1>🌳 עץ ארגוני · ארקיע</h1>
+  <input type="hidden" name="next" value="{{ next }}">
+  <label>שם משתמש<input name="username" autofocus autocomplete="username"></label>
+  <label>סיסמה<input name="password" type="password" autocomplete="current-password"></label>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <button type="submit">התחברות</button>
+</form>
+</body>
+</html>

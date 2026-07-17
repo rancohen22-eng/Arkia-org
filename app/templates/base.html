@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} — עץ ארגוני ארקיע</title>
+<link rel="stylesheet" href="/static/css/app.css?v=org1">
+</head>
+<body>
+<header>
+  <div class="brand">🌳 עץ ארגוני · ארקיע</div>
+  <div class="user">👤 <span id="userName"></span> · <a href="/logout" style="color:inherit">יציאה</a></div>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+<script>
+const CURRENT_USER = {{ request.session.get('user', '') | tojson }};
+function getUser(){ return CURRENT_USER || ''; }
+document.getElementById('userName').textContent = getUser() || 'אורח';
+async function apiPost(url, data){
+  const r = await fetch(url, {method:'POST',
+    headers: {'Content-Type':'application/json', 'X-User': encodeURIComponent(getUser() || 'אנונימי')},
+    body: JSON.stringify(data)});
+  if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || await r.text());
+  return r.json();
+}
+// auto-logout after inactivity (the server enforces the same idle window)
+(function(){
+  if (!CURRENT_USER) return;
+  const IDLE_MS = {{ idle_seconds }} * 1000, PING_MS = 2 * 60 * 1000;
+  let idleTimer, lastPing = Date.now();
+  function activity(){
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function(){ location.href = '/logout'; }, IDLE_MS);
+    if (Date.now() - lastPing > PING_MS){ lastPing = Date.now(); fetch('/health', {cache:'no-store'}).catch(function(){}); }
+  }
+  ['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(function(ev){
+    document.addEventListener(ev, activity, {passive:true});
+  });
+  activity();
+})();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
