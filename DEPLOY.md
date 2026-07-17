@@ -27,7 +27,7 @@ python3 -c "import secrets; print(secrets.token_hex(32))"   # -> SECRET_KEY
 nano .env          # SECRET_KEY=..., ARKIA_USERS=ranc:הסיסמה-שלך, SESSION_HTTPS_ONLY=0
 
 # בעלות (כך ש-rsync של הפריסה וגם השירות יעבדו — התאם למשתמש שהתמחיר משתמש בו)
-sudo chown -R arkia:arkia /opt/arkia-org   # אם השירות רץ כמשתמש 'arkia'
+sudo chown -R ubuntu:ubuntu /opt/arkia-org
 ```
 
 ## 2. העברת העץ הקיים מהתמחיר (חד-פעמי, לפני הסרה מהתמחיר)

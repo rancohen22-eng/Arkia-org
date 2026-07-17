@@ -8,8 +8,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=arkia
-Group=arkia
+User=ubuntu
+Group=ubuntu
 WorkingDirectory=/opt/arkia-org
 EnvironmentFile=/opt/arkia-org/.env
 # bind to localhost only — Caddy is the public front door.
