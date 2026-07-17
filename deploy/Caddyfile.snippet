@@ -1,0 +1,18 @@
+# ── Arkia org-chart — add this block to the server's /etc/caddy/Caddyfile ──
+#
+# The pricing system already occupies :80/:443 for the main site. Since there is
+# no domain yet, expose the org-chart on its own port. After editing, run:
+#     sudo systemctl reload caddy
+# and open port 8090 in Oracle's Security List + the VM firewall (see DEPLOY.md).
+#
+# Reachable at:  http://<PUBLIC_IP>:8090
+:8090 {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8020
+}
+
+# ── Later, when you have a domain/subdomain, prefer this instead of the port ──
+# org.example.com {
+#     encode zstd gzip
+#     reverse_proxy 127.0.0.1:8020
+# }

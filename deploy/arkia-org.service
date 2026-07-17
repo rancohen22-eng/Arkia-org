@@ -1,0 +1,23 @@
+# systemd service — Arkia org-chart system
+# Install:  sudo cp deploy/arkia-org.service /etc/systemd/system/arkia-org.service
+#           sudo systemctl daemon-reload && sudo systemctl enable --now arkia-org
+# Logs:     journalctl -u arkia-org -f
+[Unit]
+Description=Arkia org-chart system (FastAPI/uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=arkia
+Group=arkia
+WorkingDirectory=/opt/arkia-org
+EnvironmentFile=/opt/arkia-org/.env
+# bind to localhost only — Caddy is the public front door.
+ExecStart=/opt/arkia-org/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8020 --workers 1
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
