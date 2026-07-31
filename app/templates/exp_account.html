@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="toolbar"><a class="linkbtn" href="/exp">→ חזרה לרשימת הדוחות</a></div>
+<h1>החשבון שלי</h1>
+
+<div class="cards" style="max-width:680px">
+  <section class="card">
+    <h2>התחברות עם Passkey / Face ID</h2>
+    <p class="hint" id="pkIntro"></p>
+    <div id="pkArea"></div>
+    <div id="pkList"></div>
+    <div class="err" id="pkErr" style="display:none;margin-top:10px"></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/webauthn.js?v=1"></script>
+<script>
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>(
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function load(){
+  const d = await fetch('/auth/webauthn/credentials').then(r=>r.json());
+  const intro = document.getElementById('pkIntro');
+  if(!d.enabled){
+    intro.textContent = 'התחברות ב-Passkey אינה מופעלת בשרת זה. יש להגדיר WEBAUTHN_RP_ID ו-WEBAUTHN_ORIGIN, ולהתקין את חבילת webauthn.';
+    document.getElementById('pkArea').innerHTML=''; document.getElementById('pkList').innerHTML=''; return;
+  }
+  intro.textContent = 'רשום את המכשיר שלך (Face ID / טביעת אצבע) כדי להתחבר בפעם הבאה בלי סיסמה.';
+  document.getElementById('pkArea').innerHTML =
+    `<button onclick="addPasskey()">➕ רישום מכשיר זה כ-Passkey</button>`;
+  const rows = d.credentials||[];
+  document.getElementById('pkList').innerHTML = !rows.length
+    ? '<p class="hint">עדיין לא נרשמו Passkeys.</p>'
+    : '<table class="grid" style="margin-top:12px"><thead><tr><th>מכשיר</th><th>נרשם</th><th style="width:80px"></th></tr></thead><tbody>'
+      + rows.map(c=>`<tr><td>${esc(c.label||'Passkey')}</td><td>${esc(c.created_at||'')}</td>
+        <td class="c"><button class="danger sm" onclick="delPasskey(${c.id})">מחק</button></td></tr>`).join('')
+      + '</tbody></table>';
+}
+
+async function addPasskey(){
+  const err = document.getElementById('pkErr'); err.style.display='none';
+  const label = (navigator.platform || 'המכשיר שלי');
+  try{ await ArkiaPasskey.register(label); load(); }
+  catch(e){ err.textContent = e.message || 'הרישום נכשל'; err.style.display='block'; }
+}
+async function delPasskey(id){
+  if(!confirm('למחוק את ה-Passkey?')) return;
+  await apiPost('/auth/webauthn/credentials/'+id+'/delete', {});
+  load();
+}
+load().catch(e=>{ const err=document.getElementById('pkErr'); err.textContent=e.message; err.style.display='block'; });
+</script>
+{% endblock %}

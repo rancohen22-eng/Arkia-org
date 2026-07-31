@@ -8,12 +8,32 @@
 </head>
 <body class="loginbg">
 <form class="logincard" method="post" action="/login">
-  <h1>🌳 עץ ארגוני · ארקיע</h1>
+  <h1>ארקיע · התחברות</h1>
   <input type="hidden" name="next" value="{{ next }}">
-  <label>שם משתמש<input name="username" autofocus autocomplete="username"></label>
+  <label>שם משתמש<input id="username" name="username" autofocus autocomplete="username"></label>
   <label>סיסמה<input name="password" type="password" autocomplete="current-password"></label>
   {% if error %}<div class="err">{{ error }}</div>{% endif %}
   <button type="submit">התחברות</button>
+  {% if passkey_enabled() %}
+  <div class="or">או</div>
+  <button type="button" class="secondary" id="pkBtn">🔐 התחברות עם Passkey / Face ID</button>
+  <div class="err" id="pkErr" style="display:none"></div>
+  {% endif %}
 </form>
+{% if passkey_enabled() %}
+<script src="/static/js/webauthn.js?v=1"></script>
+<script>
+document.getElementById('pkBtn').addEventListener('click', async function(){
+  const err = document.getElementById('pkErr'); err.style.display='none';
+  const u = document.getElementById('username').value.trim();
+  if(!u){ err.textContent='יש להזין שם משתמש'; err.style.display='block';
+    document.getElementById('username').focus(); return; }
+  try{
+    await ArkiaPasskey.login(u);
+    location.href = {{ next | tojson }} || '/exp';
+  }catch(e){ err.textContent = e.message || 'ההתחברות נכשלה'; err.style.display='block'; }
+});
+</script>
+{% endif %}
 </body>
 </html>

@@ -36,6 +36,9 @@ button.secondary:hover{ background:#e2e8f0; }
 .logincard button{ width:100%; margin-top:18px; padding:11px; }
 .logincard .err{ background:#fee2e2; color:#b91c1c; border-radius:8px; padding:8px 10px;
   font-size:13px; margin-top:12px; }
+.logincard .or{ text-align:center; color:var(--muted); font-size:12px; margin:14px 0 4px;
+  position:relative; }
+.logincard #pkBtn{ width:100%; margin-top:8px; padding:11px; }
 
 /* ===== expense module (החזרי הוצאות) ===== */
 header nav{ display:flex; gap:14px; font-size:14px; }

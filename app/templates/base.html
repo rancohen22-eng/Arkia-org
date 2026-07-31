@@ -12,6 +12,7 @@
   <nav>
     <a href="/exp">🧾 החזרי הוצאות</a>
     <a href="/">🌳 עץ ארגוני</a>
+    {% if passkey_enabled() %}<a href="/exp/account">🔐 החשבון שלי</a>{% endif %}
     {% if is_admin(request.session.get('user','')) %}<a href="/exp/admin">⚙️ הגדרות</a>{% endif %}
   </nav>
   <div class="user">👤 <span id="userName"></span> · <a href="/logout" style="color:inherit">יציאה</a></div>

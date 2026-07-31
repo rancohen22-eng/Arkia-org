@@ -22,19 +22,22 @@ from .services import org
 from .services import expense
 from .services import ocr as ocr_service
 from .services import mailer, pdf
+from .services import passkey
 
 BASE = Path(__file__).resolve().parent
 app = FastAPI(title="עץ ארגוני — ארקיע")
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 templates = Jinja2Templates(directory=BASE / "templates")
 templates.env.globals["is_admin"] = auth.is_admin
+templates.env.globals["passkey_enabled"] = passkey.available
 
 # ---- authentication (session cookie + login gate) ----
 # /org/fill/* and /org/api/public/* are reached by managers via a WhatsApp magic
 # link with no login — access is gated by the secret token in the URL, not a session.
 PUBLIC_PREFIXES = ("/login", "/logout", "/static", "/health", "/favicon",
                    "/org/fill", "/org/api/public",
-                   "/exp/approve", "/exp/api/public")
+                   "/exp/approve", "/exp/api/public",
+                   "/auth/webauthn/login")   # passkey login is pre-auth; register isn't
 
 
 @app.middleware("http")
@@ -979,3 +982,107 @@ def _pdf_headers(rep: dict, inline: bool = True) -> dict:
     disp = "inline" if inline else "attachment"
     return {"Content-Disposition":
             f"{disp}; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}"}
+
+
+# ==================== passkeys / WebAuthn (optional login) ====================
+# Register requires an active session (you add a passkey to your own account);
+# login is pre-auth and gated only by the WebAuthn ceremony + a session challenge.
+
+def _passkey_off():
+    return JSONResponse({"error": "התחברות ב-Passkey אינה מופעלת"}, status_code=404)
+
+
+@app.get("/exp/account", response_class=HTMLResponse)
+def exp_account_page(request: Request):
+    return templates.TemplateResponse(request, "exp_account.html",
+                                      {"title": "החשבון שלי"})
+
+
+@app.get("/auth/webauthn/credentials")
+def webauthn_credentials(request: Request):
+    user = get_user(request)
+    con = connect()
+    creds = [{"id": c["id"], "label": c["label"], "created_at": c["created_at"]}
+             for c in passkey.get_credentials(con, user)]
+    con.close()
+    return {"enabled": passkey.available(), "credentials": creds}
+
+
+@app.post("/auth/webauthn/credentials/{cred_id}/delete")
+def webauthn_credential_delete(cred_id: int, request: Request):
+    con = connect()
+    passkey.delete_credential(con, get_user(request), cred_id)
+    con.close()
+    return {"ok": True}
+
+
+@app.post("/auth/webauthn/register/options")
+def webauthn_register_options(request: Request):
+    if not passkey.available():
+        return _passkey_off()
+    user = get_user(request)
+    con = connect()
+    prof = expense.get_profile(con, user)
+    display = prof["display_name"] if prof else user
+    options_json, challenge = passkey.registration_options(con, user, display)
+    con.close()
+    request.session["wa_reg_chal"] = challenge
+    return Response(content=options_json, media_type="application/json")
+
+
+@app.post("/auth/webauthn/register/verify")
+async def webauthn_register_verify(request: Request):
+    if not passkey.available():
+        return _passkey_off()
+    body = await request.json()
+    challenge = request.session.pop("wa_reg_chal", None)
+    if not challenge:
+        return JSONResponse({"error": "פג תוקף הבקשה, נסה שוב"}, status_code=400)
+    con = connect()
+    try:
+        import json as _json
+        passkey.verify_registration(con, get_user(request),
+                                    _json.dumps(body.get("credential")),
+                                    challenge, label=body.get("label", ""))
+    except Exception:
+        con.close()
+        return JSONResponse({"error": "רישום ה-Passkey נכשל"}, status_code=400)
+    con.close()
+    return {"ok": True}
+
+
+@app.post("/auth/webauthn/login/options")
+async def webauthn_login_options(request: Request):
+    if not passkey.available():
+        return _passkey_off()
+    body = await request.json()
+    username = (body.get("username") or "").strip()
+    if not username:
+        return JSONResponse({"error": "יש להזין שם משתמש"}, status_code=400)
+    con = connect()
+    res = passkey.authentication_options(con, username)
+    con.close()
+    if res is None:
+        return JSONResponse({"error": "למשתמש זה אין Passkey רשום"}, status_code=404)
+    options_json, challenge = res
+    request.session["wa_login_chal"] = challenge
+    request.session["wa_login_user"] = username.lower()
+    return Response(content=options_json, media_type="application/json")
+
+
+@app.post("/auth/webauthn/login/verify")
+async def webauthn_login_verify(request: Request):
+    if not passkey.available():
+        return _passkey_off()
+    body = await request.json()
+    challenge = request.session.pop("wa_login_chal", None)
+    username = request.session.pop("wa_login_user", None)
+    if not challenge or not username:
+        return JSONResponse({"error": "פג תוקף הבקשה, נסה שוב"}, status_code=400)
+    con = connect()
+    ok = passkey.verify_authentication(con, username, body.get("credential") or {}, challenge)
+    con.close()
+    if not ok:
+        return JSONResponse({"error": "אימות ה-Passkey נכשל"}, status_code=401)
+    request.session["user"] = username
+    return {"ok": True}
