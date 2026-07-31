@@ -19,6 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import auth
 from .db import connect, init_db
 from .services import org
+from .services import expense
 
 BASE = Path(__file__).resolve().parent
 app = FastAPI(title="עץ ארגוני — ארקיע")
@@ -30,7 +31,8 @@ templates.env.globals["is_admin"] = auth.is_admin
 # /org/fill/* and /org/api/public/* are reached by managers via a WhatsApp magic
 # link with no login — access is gated by the secret token in the URL, not a session.
 PUBLIC_PREFIXES = ("/login", "/logout", "/static", "/health", "/favicon",
-                   "/org/fill", "/org/api/public")
+                   "/org/fill", "/org/api/public",
+                   "/exp/approve", "/exp/api/public")
 
 
 @app.middleware("http")
@@ -38,7 +40,7 @@ async def require_login(request: Request, call_next):
     path = request.url.path
     if request.session.get("user") or any(path.startswith(p) for p in PUBLIC_PREFIXES):
         return await call_next(request)
-    if path.startswith("/api/") or path.startswith("/org/api/"):
+    if path.startswith(("/api/", "/org/api/", "/exp/api/")):
         return JSONResponse({"error": "לא מחובר — נא להתחבר מחדש"}, status_code=401)
     return RedirectResponse(f"/login?next={quote(path)}", status_code=303)
 
@@ -341,5 +343,199 @@ def org_api_public_submit(token: str):
         con.close()
         return JSONResponse({"error": "קישור לא תקף"}, status_code=404)
     org.mark_filled(con, node["id"])
+    con.close()
+    return {"ok": True}
+
+
+# ==================== החזרי הוצאות / ריכוז אשראי (expense) ====================
+# Settings screens below are admin-only. The employee-facing report editor and the
+# token-gated approver screen arrive in later phases.
+
+def _forbidden_admin(request: Request) -> JSONResponse | None:
+    """None if the caller is an admin, else a 403 JSON body."""
+    if auth.is_admin(get_user(request)):
+        return None
+    return JSONResponse({"error": "פעולה זו מותרת למנהל מערכת בלבד"}, status_code=403)
+
+
+@app.get("/exp/admin", response_class=HTMLResponse)
+def exp_admin_page(request: Request):
+    if not auth.is_admin(get_user(request)):
+        return HTMLResponse(
+            "<div dir='rtl' style='font-family:sans-serif;padding:40px;text-align:center'>"
+            "<h2>אין הרשאה</h2><p>מסך ההגדרות פתוח למנהל מערכת בלבד.</p>"
+            "<p><a href='/exp'>חזרה</a></p></div>", status_code=403)
+    return templates.TemplateResponse(request, "expense_admin.html",
+                                      {"title": "הגדרות החזרי הוצאות"})
+
+
+@app.get("/exp/api/settings")
+def exp_api_settings(request: Request):
+    if (err := _forbidden_admin(request)):
+        return err
+    con = connect()
+    data = expense.settings_snapshot(con)
+    con.close()
+    return data
+
+
+# ---- categories ----
+
+@app.post("/exp/api/settings/category")
+async def exp_api_category_add(request: Request):
+    if (err := _forbidden_admin(request)):
+        return err
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"error": "חסר שם סיווג"}, status_code=400)
+    con = connect()
+    cid = expense.add_category(con, name, int(body.get("sort") or 0))
+    audit(con, get_user(request), "exp_categories", str(cid), "add", None, name)
+    con.commit()
+    con.close()
+    return {"id": cid}
+
+
+@app.post("/exp/api/settings/category/{cid}")
+async def exp_api_category_update(cid: int, request: Request):
+    if (err := _forbidden_admin(request)):
+        return err
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"error": "חסר שם סיווג"}, status_code=400)
+    con = connect()
+    ok = expense.update_category(con, cid, name, int(body.get("sort") or 0),
+                                 bool(body.get("is_active", True)))
+    con.close()
+    if not ok:
+        return JSONResponse({"error": "סיווג לא נמצא"}, status_code=404)
+    return {"ok": True}
+
+
+@app.post("/exp/api/settings/category/{cid}/delete")
+def exp_api_category_delete(cid: int, request: Request):
+    if (err := _forbidden_admin(request)):
+        return err
+    con = connect()
+    expense.delete_category(con, cid)
+    con.close()
+    return {"ok": True}
+
+
+# ---- approvers ----
+
+@app.post("/exp/api/settings/approver")
+async def exp_api_approver_add(request: Request):
+    if (err := _forbidden_admin(request)):
+        return err
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    email = (body.get("email") or "").strip()
+    if not name or not email:
+        return JSONResponse({"error": "חסר שם או מייל מאשר"}, status_code=400)
+    con = connect()
+    aid = expense.add_approver(con, name, email)
+    audit(con, get_user(request), "exp_approvers", str(aid), "add", None, email)
+    con.commit()
+    con.close()
+    return {"id": aid}
+
+
+@app.post("/exp/api/settings/approver/{aid}")
+async def exp_api_approver_update(aid: int, request: Request):
+    if (err := _forbidden_admin(request)):
+        return err
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    email = (body.get("email") or "").strip()
+    if not name or not email:
+        return JSONResponse({"error": "חסר שם או מייל מאשר"}, status_code=400)
+    con = connect()
+    ok = expense.update_approver(con, aid, name, email,
+                                 bool(body.get("is_active", True)))
+    con.close()
+    if not ok:
+        return JSONResponse({"error": "מאשר לא נמצא"}, status_code=404)
+    return {"ok": True}
+
+
+@app.post("/exp/api/settings/approver/{aid}/delete")
+def exp_api_approver_delete(aid: int, request: Request):
+    if (err := _forbidden_admin(request)):
+        return err
+    con = connect()
+    expense.delete_approver(con, aid)
+    con.close()
+    return {"ok": True}
+
+
+# ---- departments ----
+
+@app.post("/exp/api/settings/department")
+async def exp_api_department_add(request: Request):
+    if (err := _forbidden_admin(request)):
+        return err
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"error": "חסר שם מחלקה"}, status_code=400)
+    con = connect()
+    did = expense.add_department(con, name)
+    con.close()
+    return {"id": did}
+
+
+@app.post("/exp/api/settings/department/{did}")
+async def exp_api_department_update(did: int, request: Request):
+    if (err := _forbidden_admin(request)):
+        return err
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"error": "חסר שם מחלקה"}, status_code=400)
+    con = connect()
+    ok = expense.update_department(con, did, name, bool(body.get("is_active", True)))
+    con.close()
+    if not ok:
+        return JSONResponse({"error": "מחלקה לא נמצאה"}, status_code=404)
+    return {"ok": True}
+
+
+@app.post("/exp/api/settings/department/{did}/delete")
+def exp_api_department_delete(did: int, request: Request):
+    if (err := _forbidden_admin(request)):
+        return err
+    con = connect()
+    expense.delete_department(con, did)
+    con.close()
+    return {"ok": True}
+
+
+# ---- user profiles (username -> display name / email / department) ----
+
+@app.post("/exp/api/settings/profile")
+async def exp_api_profile_upsert(request: Request):
+    if (err := _forbidden_admin(request)):
+        return err
+    body = await request.json()
+    username = (body.get("username") or "").strip()
+    if not username:
+        return JSONResponse({"error": "חסר שם משתמש"}, status_code=400)
+    con = connect()
+    expense.upsert_profile(con, username, body.get("display_name", ""),
+                           body.get("email", ""), body.get("department", ""),
+                           bool(body.get("is_active", True)))
+    con.close()
+    return {"ok": True}
+
+
+@app.post("/exp/api/settings/profile/{username}/delete")
+def exp_api_profile_delete(username: str, request: Request):
+    if (err := _forbidden_admin(request)):
+        return err
+    con = connect()
+    expense.delete_profile(con, username)
     con.close()
     return {"ok": True}

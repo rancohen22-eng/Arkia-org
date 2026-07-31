@@ -8,7 +8,11 @@
 </head>
 <body>
 <header>
-  <div class="brand">🌳 עץ ארגוני · ארקיע</div>
+  <div class="brand">ארקיע</div>
+  <nav>
+    <a href="/">🌳 עץ ארגוני</a>
+    {% if is_admin(request.session.get('user','')) %}<a href="/exp/admin">⚙️ הגדרות החזרים</a>{% endif %}
+  </nav>
   <div class="user">👤 <span id="userName"></span> · <a href="/logout" style="color:inherit">יציאה</a></div>
 </header>
 <main>
