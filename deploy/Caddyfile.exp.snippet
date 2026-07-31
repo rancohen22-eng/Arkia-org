@@ -1,0 +1,19 @@
+# ── Arkia expenses — add this block to the server's /etc/caddy/Caddyfile ──
+#
+# The org-chart already uses :8090 → 127.0.0.1:8020. The expense service is a
+# separate process on 8021, so expose it on its own public port, 8091. After
+# editing, run:
+#     sudo systemctl reload caddy
+# and open port 8091 in Oracle's Security List + the VM firewall (see DEPLOY_EXP.md).
+#
+# Reachable at:  http://<PUBLIC_IP>:8091
+:8091 {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8021
+}
+
+# ── Later, when you have a domain/subdomain, prefer this instead of the port ──
+# expenses.example.com {
+#     encode zstd gzip
+#     reverse_proxy 127.0.0.1:8021
+# }

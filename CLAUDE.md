@@ -9,7 +9,12 @@
 
 ## סטאק ומבנה
 - **Python 3.11 + FastAPI + SQLite + Jinja2**. פורט 8020 (מקומית).
-- `app/main.py` — כל ה-routes וה-API (התחברות, אדמין, דף מילוי ציבורי, ייצוא).
+- `app/webapp.py` — **הליבה של שכבת הווב**: כל ה-route handlers + `create_app(include_org, include_exp, ...)`
+  שבונה אפליקציה עם קבוצות ה-routes הנבחרות. שתי נקודות כניסה נבנות ממנו:
+  - `app/main.py` → `app.main:app` — האפליקציה המלאה (עץ ארגוני **+** הוצאות, פורט 8020).
+  - `app/exp_app.py` → `app.exp_app:app` — **שירות הוצאות עצמאי** (`/exp` בלבד, בלי העץ),
+    עם DB/משתמשים/פורט משלו (8021). פריסה: `DEPLOY_EXP.md`. נתיב ה-DB מ-`ARKIA_DB_PATH`.
+- `app/main.py` — נקודת כניסה מלאה (עץ + הוצאות); ה-handlers עצמם ב-`webapp.py`.
 - `app/services/org.py` — שכבת הנתונים של העץ (**הליבה** — יצירה/הוספה/עריכה/השחלה/מחיקה).
 - `app/services/org_export.py` — ייצוא דף HTML עצמאי לשיתוף.
 - `app/templates/` — `base.html`, `login.html`, `org_admin.html` (התרשים + עורך), `org_fill.html` (דף מנהל).

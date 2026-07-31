@@ -1,8 +1,13 @@
 """Database connection and schema for the Arkia org-chart system."""
+import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "org.db"
+# Which SQLite file to use. Defaults to data/org.db (the org-chart + full app).
+# The standalone expense service (app.exp_app) sets ARKIA_DB_PATH=data/exp.db so
+# it runs against its own database, fully separate from the org tree.
+_DEFAULT_DB = Path(__file__).resolve().parent.parent / "data" / "org.db"
+DB_PATH = Path(os.environ.get("ARKIA_DB_PATH") or _DEFAULT_DB)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS audit_log (
