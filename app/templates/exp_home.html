@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>החזרי הוצאות וריכוז אשראי</h1>
+<p class="hint" id="whoami"></p>
+
+<div class="cards" style="max-width:820px">
+  <section class="card">
+    <h2>דוח חדש</h2>
+    <div class="newform">
+      <div class="seg" id="typeSeg">
+        <button type="button" class="on" data-type="reimbursement">החזר הוצאות</button>
+        <button type="button" data-type="credit">ריכוז אשראי</button>
+      </div>
+      <label>חודש
+        <input type="month" id="f-month">
+      </label>
+      <label class="only-reimb">מחלקה
+        <input id="f-dept" list="dept-list" placeholder="מחלקה">
+        <datalist id="dept-list"></datalist>
+      </label>
+      <label class="only-reimb">מנהל מאשר
+        <select id="f-approver"><option value="">— בחר —</option></select>
+      </label>
+      <button onclick="createReport()">פתח דוח חדש →</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>הדוחות שלי</h2>
+    <div id="reportsList"><p class="hint">טוען…</p></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let TYPE = "reimbursement";
+const STATUS = {draft:["בהכנה","st-draft"], pending:["ממתין לאישור","st-pending"],
+  approved:["אושר","st-approved"], rejected:["נדחה","st-rejected"], compiled:["רוכז","st-compiled"]};
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>(
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function money(n){ return (Number(n)||0).toLocaleString('he-IL',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+document.querySelectorAll('#typeSeg button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#typeSeg button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); TYPE=b.dataset.type;
+  document.querySelectorAll('.only-reimb').forEach(el=>el.style.display = TYPE==='reimbursement'?'':'none');
+});
+
+async function load(){
+  const d = await fetch('/exp/api/home').then(r=>r.json());
+  document.getElementById('whoami').textContent =
+    (d.profile.display_name || d.user) + (d.profile.department ? ' · ' + d.profile.department : '');
+  if(!document.getElementById('f-month').value){
+    document.getElementById('f-month').value = new Date().toISOString().slice(0,7);
+  }
+  if(d.profile.department) document.getElementById('f-dept').value = d.profile.department;
+  document.getElementById('dept-list').innerHTML =
+    (d.departments||[]).map(x=>`<option value="${esc(x)}">`).join('');
+  document.getElementById('f-approver').innerHTML =
+    '<option value="">— בחר —</option>' +
+    (d.approvers||[]).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
+  renderReports(d.reports);
+}
+
+function renderReports(rows){
+  if(!rows || !rows.length){ document.getElementById('reportsList').innerHTML =
+    '<p class="hint">עדיין אין דוחות. פתח דוח חדש כדי להתחיל.</p>'; return; }
+  document.getElementById('reportsList').innerHTML = rows.map(r=>{
+    const s = STATUS[r.status]||[r.status,'st-draft'];
+    const typ = r.type==='credit' ? 'ריכוז אשראי' : 'החזר הוצאות';
+    return `<a class="rrow" href="/exp/report/${r.id}">
+      <div class="rmain"><b>${esc(r.title)}</b>
+        <span class="rmeta">${typ} · ${esc(r.month)}${r.department?' · '+esc(r.department):''}</span></div>
+      <div class="rright"><span class="stbadge ${s[1]}">${s[0]}</span>
+        <span class="rtot">₪ ${money(r.total)}</span></div>
+    </a>`;
+  }).join('');
+}
+
+async function createReport(){
+  const month = document.getElementById('f-month').value;
+  if(!month){ alert('יש לבחור חודש'); return; }
+  const payload = {type:TYPE, month};
+  if(TYPE==='reimbursement'){
+    payload.department = document.getElementById('f-dept').value;
+    payload.approver_id = document.getElementById('f-approver').value || null;
+  }
+  const res = await apiPost('/exp/api/report', payload);
+  location.href = '/exp/report/' + res.id;
+}
+
+load().catch(e=>alert('שגיאה: '+e.message));
+</script>
+{% endblock %}

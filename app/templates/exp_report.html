@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="toolbar"><a class="linkbtn" href="/exp">→ חזרה לרשימת הדוחות</a></div>
+
+<div id="reportHead"></div>
+
+<div class="cards" style="max-width:900px">
+  <section class="card">
+    <div class="rowbetween">
+      <h2>חשבוניות</h2>
+      <div id="addArea"></div>
+    </div>
+    <div id="ocrMsg" class="ocrmsg" style="display:none"></div>
+    <table class="grid" id="linesTable"><thead><tr>
+      <th style="width:44px">מס׳</th><th style="width:60px">מסמך</th>
+      <th>ספק</th><th style="width:120px">סכום ₪</th><th>סיווג</th><th style="width:70px"></th>
+    </tr></thead><tbody id="linesBody"></tbody></table>
+    <div class="totalbar">סה"כ: <b id="grandTotal">₪ 0.00</b></div>
+  </section>
+
+  <section class="card" id="actionsCard">
+    <h2>הפקה ושליחה</h2>
+    <div class="actions">
+      <button id="btnProduce" onclick="produce()"></button>
+      <a class="linkbtn" id="btnPdf" href="#" target="_blank">⬇ הורד PDF</a>
+    </div>
+    <div class="sendrow">
+      <input id="sendEmail" type="email" placeholder="שליחה למייל נוסף (למשל הנהלת חשבונות)">
+      <button class="secondary" onclick="sendToEmail()">שלח למייל</button>
+    </div>
+    <p class="hint" id="sentNote"></p>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const RID = {{ rid }};
+let DATA = null;
+const STATUS = {draft:["בהכנה","st-draft"], pending:["ממתין לאישור","st-pending"],
+  approved:["אושר","st-approved"], rejected:["נדחה","st-rejected"], compiled:["רוכז","st-compiled"]};
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>(
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function money(n){ return (Number(n)||0).toLocaleString('he-IL',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function setTotal(t){ document.getElementById('grandTotal').textContent = '₪ ' + money(t); }
+
+async function load(){
+  DATA = await fetch('/exp/api/report/'+RID).then(r=>r.json());
+  if(DATA.error){ alert(DATA.error); return; }
+  renderHead(); renderAdd(); renderLines(); renderActions();
+}
+
+function catOptions(sel){
+  return '<option value="">— סיווג —</option>' + (DATA.categories||[]).map(c=>
+    `<option value="${c.id}" ${c.id===sel?'selected':''}>${esc(c.name)}</option>`).join('');
+}
+
+function renderHead(){
+  const r = DATA.report, s = STATUS[r.status]||[r.status,'st-draft'];
+  const isReimb = r.type==='reimbursement';
+  const lock = r.editable ? '' : 'disabled';
+  const apprOpts = '<option value="">— בחר מאשר —</option>' + (DATA.approvers||[]).map(a=>
+    `<option value="${a.id}" ${a.id===r.approver_id?'selected':''}>${esc(a.name)}</option>`).join('');
+  const deptList = (DATA.departments||[]).map(x=>`<option value="${esc(x)}">`).join('');
+  document.getElementById('reportHead').innerHTML = `
+    <h1>${esc(r.title)} <span class="stbadge ${s[1]}">${s[0]}</span></h1>
+    <div class="headgrid">
+      <label>שם הטופס<input id="h-title" value="${esc(r.title)}" ${lock}></label>
+      <label>חודש<input id="h-month" type="month" value="${esc(r.month)}" ${lock}></label>
+      ${isReimb ? `
+      <label>מחלקה<input id="h-dept" list="dl" value="${esc(r.department)}" ${lock}>
+        <datalist id="dl">${deptList}</datalist></label>
+      <label>מנהל מאשר<select id="h-approver" ${lock}>${apprOpts}</select></label>` : ''}
+    </div>
+    ${r.status==='rejected' && r.decision_note ? `<div class="rejnote">הדוח נדחה: ${esc(r.decision_note)}</div>`:''}
+    ${!r.editable ? `<p class="hint">הדוח אינו ניתן לעריכה בסטטוס זה. ניתן עדיין להוריד PDF ולשלוח במייל.</p>`:''}
+  `;
+  if(r.editable){
+    ['h-title','h-month','h-dept','h-approver'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.addEventListener('change', saveHead);
+    });
+  }
+}
+
+async function saveHead(){
+  const g=id=>{const e=document.getElementById(id);return e?e.value:undefined;};
+  await apiPost('/exp/api/report/'+RID+'/update', {
+    title:g('h-title'), month:g('h-month'),
+    department:g('h-dept'), approver_id:g('h-approver')||null });
+}
+
+function renderAdd(){
+  if(!DATA.report.editable){ document.getElementById('addArea').innerHTML=''; return; }
+  document.getElementById('addArea').innerHTML = `
+    <label class="camera">📷 צלם/העלה חשבונית
+      <input type="file" accept="image/*" capture="environment" style="display:none" onchange="uploadInvoice(this)">
+    </label>
+    <button class="secondary" onclick="addManual()">+ שורה ידנית</button>`;
+}
+
+async function uploadInvoice(input){
+  const file = input.files[0]; if(!file) return;
+  const msg = document.getElementById('ocrMsg');
+  msg.style.display='block'; msg.textContent='מעלה וקורא חשבונית…';
+  const fd = new FormData(); fd.append('file', file);
+  try{
+    const r = await fetch('/exp/api/report/'+RID+'/line', {method:'POST',
+      headers:{'X-User': encodeURIComponent(getUser()||'אנונימי')}, body:fd});
+    const res = await r.json();
+    if(!r.ok){ throw new Error(res.error||'שגיאה'); }
+    if(res.ocr.engine==='none') msg.textContent='חשבונית נוספה. מלא ספק וסכום ידנית (זיהוי אוטומטי כבוי).';
+    else if(res.ocr.engine.indexOf('error')>=0) msg.textContent='חשבונית נוספה, אך הזיהוי האוטומטי נכשל — מלא ידנית.';
+    else msg.textContent='זוהה: ' + (res.ocr.supplier||'—') + ' · ₪ ' + money(res.ocr.amount) + ' (ניתן לתקן).';
+    input.value='';
+    DATA.lines.push(res.line); setTotal(res.total); renderLines();
+  }catch(e){ msg.textContent='שגיאה: '+e.message; }
+}
+
+async function addManual(){
+  const r = await fetch('/exp/api/report/'+RID+'/line', {method:'POST',
+    headers:{'X-User': encodeURIComponent(getUser()||'אנונימי')}, body:new FormData()});
+  const res = await r.json();
+  DATA.lines.push(res.line); setTotal(res.total);
+  document.getElementById('ocrMsg').style.display='none'; renderLines();
+}
+
+function renderLines(){
+  const editable = DATA.report.editable;
+  const body = document.getElementById('linesBody');
+  if(!DATA.lines.length){ body.innerHTML='<tr><td colspan="7" class="empty">עדיין אין חשבוניות.</td></tr>';
+    setTotal(DATA.report.total); return; }
+  body.innerHTML = DATA.lines.map(l=>`
+    <tr data-id="${l.id}">
+      <td class="c">${l.seq}</td>
+      <td class="c">${l.has_image?`<a href="/exp/report/${RID}/line/${l.id}/image" target="_blank">📄</a>`:'—'}</td>
+      <td><input class="f-sup" value="${esc(l.supplier)}" ${editable?'':'disabled'}></td>
+      <td><input class="f-amt" type="number" step="0.01" value="${l.amount}" ${editable?'':'disabled'}></td>
+      <td><select class="f-cat" ${editable?'':'disabled'}>${catOptions(l.category_id)}</select></td>
+      <td class="c">${editable?`<button class="danger sm" onclick="delLine(this)">מחק</button>`:''}</td>
+    </tr>`).join('');
+  if(editable){
+    body.querySelectorAll('tr').forEach(tr=>{
+      tr.querySelectorAll('.f-sup,.f-amt,.f-cat').forEach(el=>el.addEventListener('change',()=>saveLine(tr)));
+    });
+  }
+  setTotal(DATA.report.total);
+}
+
+async function saveLine(tr){
+  const res = await apiPost('/exp/api/report/'+RID+'/line/'+tr.dataset.id, {
+    supplier: tr.querySelector('.f-sup').value,
+    amount: parseFloat(tr.querySelector('.f-amt').value)||0,
+    category_id: tr.querySelector('.f-cat').value || null });
+  if(res.total!=null) setTotal(res.total);
+}
+async function delLine(btn){
+  if(!confirm('למחוק את השורה?')) return;
+  const tr = btn.closest('tr');
+  const res = await apiPost('/exp/api/report/'+RID+'/line/'+tr.dataset.id+'/delete',{});
+  DATA = await fetch('/exp/api/report/'+RID).then(r=>r.json());
+  renderLines();
+}
+
+function renderActions(){
+  const r = DATA.report;
+  document.getElementById('btnPdf').href = '/exp/report/'+RID+'/pdf';
+  const btn = document.getElementById('btnProduce');
+  if(!r.editable){ btn.style.display='none'; }
+  else{
+    btn.style.display='';
+    btn.textContent = r.type==='credit' ? 'הפק טופס' : 'הפק טופס ושלח לאישור';
+  }
+  document.getElementById('sentNote').textContent =
+    r.sent_to ? ('נשלח לאחרונה אל ' + r.sent_to) : '';
+}
+
+async function produce(){
+  const r = DATA.report;
+  if(!DATA.lines.length){ alert('אין חשבוניות בדוח'); return; }
+  if(r.type==='reimbursement' && !document.getElementById('h-approver')?.value){
+    alert('יש לבחור מנהל מאשר'); return; }
+  const verb = r.type==='credit' ? 'להפיק את הטופס?' : 'להפיק ולשלוח לאישור המנהל?';
+  if(!confirm(verb)) return;
+  const res = await apiPost('/exp/api/report/'+RID+'/submit', {});
+  if(res.error){ alert(res.error); return; }
+  if(r.type==='credit') alert('הטופס הופק. ניתן להוריד PDF או לשלוח במייל.');
+  else alert(res.mail_sent ? 'הטופס נשלח לאישור המנהל.' :
+    'הטופס הופק. המייל יישלח כשיוגדר שרת דואר (נשמר כרגע ב-outbox).');
+  load();
+}
+
+async function sendToEmail(){
+  const email = document.getElementById('sendEmail').value.trim();
+  if(email.indexOf('@')<0){ alert('כתובת מייל לא תקינה'); return; }
+  const res = await apiPost('/exp/api/report/'+RID+'/send', {email});
+  if(res.error){ alert(res.error); return; }
+  alert(res.mail_sent ? 'נשלח אל '+email : 'נשמר לשליחה (outbox) עד להגדרת שרת דואר.');
+  document.getElementById('sentNote').textContent = 'נשלח לאחרונה אל ' + email;
+}
+
+load().catch(e=>alert('שגיאה: '+e.message));
+</script>
+{% endblock %}
