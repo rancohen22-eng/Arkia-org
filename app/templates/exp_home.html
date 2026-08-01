@@ -18,9 +18,6 @@
         <input id="f-dept" list="dept-list" placeholder="מחלקה">
         <datalist id="dept-list"></datalist>
       </label>
-      <label class="only-reimb">מנהל מאשר
-        <select id="f-approver"><option value="">— בחר —</option></select>
-      </label>
       <button onclick="createReport()">פתח דוח חדש →</button>
     </div>
   </section>
@@ -50,16 +47,15 @@ document.querySelectorAll('#typeSeg button').forEach(b=>b.onclick=()=>{
 async function load(){
   const d = await fetch('/exp/api/home').then(r=>r.json());
   document.getElementById('whoami').textContent =
-    (d.profile.display_name || d.user) + (d.profile.department ? ' · ' + d.profile.department : '');
+    (d.profile.display_name || d.user)
+    + (d.profile.department ? ' · ' + d.profile.department : '')
+    + (d.profile.approver_name ? ' · מאשר: ' + d.profile.approver_name : '');
   if(!document.getElementById('f-month').value){
     document.getElementById('f-month').value = new Date().toISOString().slice(0,7);
   }
   if(d.profile.department) document.getElementById('f-dept').value = d.profile.department;
   document.getElementById('dept-list').innerHTML =
     (d.departments||[]).map(x=>`<option value="${esc(x)}">`).join('');
-  document.getElementById('f-approver').innerHTML =
-    '<option value="">— בחר —</option>' +
-    (d.approvers||[]).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
   renderReports(d.reports);
 }
 
@@ -84,7 +80,6 @@ async function createReport(){
   const payload = {type:TYPE, month};
   if(TYPE==='reimbursement'){
     payload.department = document.getElementById('f-dept').value;
-    payload.approver_id = document.getElementById('f-approver').value || null;
   }
   const res = await apiPost('/exp/api/report', payload);
   location.href = '/exp/report/' + res.id;

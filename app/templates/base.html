@@ -4,18 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }} — {{ request.app.state.site_name }}</title>
-<link rel="stylesheet" href="/static/css/app.css?v=org1">
+<link rel="stylesheet" href="/static/css/app.css?v=exp2">
 </head>
 <body>
 <header>
-  <div class="brand">ארקיע</div>
+  <a class="brand" href="{{ request.app.state.home_path }}">
+    <span class="brand-mark">✈</span>
+    <span class="brand-name">ארקיע<small>{{ request.app.state.site_name.split('·')[0]|trim }}</small></span>
+  </a>
   <nav>
     <a href="/exp">🧾 החזרי הוצאות</a>
     {% if request.app.state.include_org %}<a href="/">🌳 עץ ארגוני</a>{% endif %}
     {% if passkey_enabled() %}<a href="/exp/account">🔐 החשבון שלי</a>{% endif %}
     {% if is_admin(request.session.get('user','')) %}<a href="/exp/admin">⚙️ הגדרות</a>{% endif %}
   </nav>
-  <div class="user">👤 <span id="userName"></span> · <a href="/logout" style="color:inherit">יציאה</a></div>
+  <div class="user">👤 <span id="userName"></span> · <a href="/logout">יציאה</a></div>
 </header>
 <main>
 {% block content %}{% endblock %}

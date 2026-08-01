@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS exp_profiles (
     display_name TEXT NOT NULL DEFAULT '',
     email TEXT NOT NULL DEFAULT '',
     department TEXT NOT NULL DEFAULT '',
+    approver_id INTEGER,          -- the manager who approves THIS user's reports (admin-assigned)
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now','localtime'))
 );
@@ -144,8 +145,17 @@ def connect(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     return con
 
 
+def _migrate(con: sqlite3.Connection) -> None:
+    """In-place additive migrations for databases created by an earlier schema.
+    Only ever ADDs nullable columns, so it is safe to run on every startup."""
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(exp_profiles)").fetchall()}
+    if "approver_id" not in cols:
+        con.execute("ALTER TABLE exp_profiles ADD COLUMN approver_id INTEGER")
+
+
 def init_db(con: sqlite3.Connection) -> None:
     con.executescript(SCHEMA)
+    _migrate(con)
     if con.execute("SELECT COUNT(*) c FROM exp_categories").fetchone()["c"] == 0:
         con.executemany(
             "INSERT INTO exp_categories (name, sort) VALUES (?, ?)",

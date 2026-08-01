@@ -35,20 +35,28 @@ def list_profiles(con):
 
 
 def upsert_profile(con, username: str, display_name: str, email: str,
-                   department: str, is_active: bool = True) -> None:
+                   department: str, is_active: bool = True, approver_id=None) -> None:
     u = (username or "").strip().lower()
     if not u:
         raise ValueError("username required")
+    approver_id = int(approver_id) if approver_id else None
     con.execute(
-        "INSERT INTO exp_profiles (username, display_name, email, department, is_active) "
-        "VALUES (?, ?, ?, ?, ?) "
+        "INSERT INTO exp_profiles (username, display_name, email, department, approver_id, is_active) "
+        "VALUES (?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(username) DO UPDATE SET "
         "display_name=excluded.display_name, email=excluded.email, "
-        "department=excluded.department, is_active=excluded.is_active",
+        "department=excluded.department, approver_id=excluded.approver_id, "
+        "is_active=excluded.is_active",
         (u, display_name.strip(), email.strip(), department.strip(),
-         1 if is_active else 0),
+         approver_id, 1 if is_active else 0),
     )
     con.commit()
+
+
+def profile_approver_id(con, username: str):
+    """The approver assigned to this user by the admin, or None."""
+    p = get_profile(con, username)
+    return p["approver_id"] if p and p["approver_id"] is not None else None
 
 
 def delete_profile(con, username: str) -> None:
@@ -159,7 +167,7 @@ def settings_snapshot(con) -> dict:
         "departments": [_dict(r, "id", "name", "is_active")
                         for r in list_departments(con)],
         "profiles": [_dict(r, "username", "display_name", "email", "department",
-                           "is_active") for r in list_profiles(con)],
+                           "approver_id", "is_active") for r in list_profiles(con)],
     }
 
 

@@ -59,8 +59,6 @@ function renderHead(){
   const r = DATA.report, s = STATUS[r.status]||[r.status,'st-draft'];
   const isReimb = r.type==='reimbursement';
   const lock = r.editable ? '' : 'disabled';
-  const apprOpts = '<option value="">— בחר מאשר —</option>' + (DATA.approvers||[]).map(a=>
-    `<option value="${a.id}" ${a.id===r.approver_id?'selected':''}>${esc(a.name)}</option>`).join('');
   const deptList = (DATA.departments||[]).map(x=>`<option value="${esc(x)}">`).join('');
   document.getElementById('reportHead').innerHTML = `
     <h1>${esc(r.title)} <span class="stbadge ${s[1]}">${s[0]}</span></h1>
@@ -70,13 +68,14 @@ function renderHead(){
       ${isReimb ? `
       <label>מחלקה<input id="h-dept" list="dl" value="${esc(r.department)}" ${lock}>
         <datalist id="dl">${deptList}</datalist></label>
-      <label>מנהל מאשר<select id="h-approver" ${lock}>${apprOpts}</select></label>` : ''}
+      <label>מנהל מאשר <span class="ro-tag">נקבע ע״י מנהל המערכת</span>
+        <input value="${esc(r.approver_name || '— לא הוקצה —')}" disabled></label>` : ''}
     </div>
     ${r.status==='rejected' && r.decision_note ? `<div class="rejnote">הדוח נדחה: ${esc(r.decision_note)}</div>`:''}
     ${!r.editable ? `<p class="hint">הדוח אינו ניתן לעריכה בסטטוס זה. ניתן עדיין להוריד PDF ולשלוח במייל.</p>`:''}
   `;
   if(r.editable){
-    ['h-title','h-month','h-dept','h-approver'].forEach(id=>{
+    ['h-title','h-month','h-dept'].forEach(id=>{
       const el=document.getElementById(id); if(el) el.addEventListener('change', saveHead);
     });
   }
@@ -85,17 +84,16 @@ function renderHead(){
 async function saveHead(){
   const g=id=>{const e=document.getElementById(id);return e?e.value:undefined;};
   await apiPost('/exp/api/report/'+RID+'/update', {
-    title:g('h-title'), month:g('h-month'),
-    department:g('h-dept'), approver_id:g('h-approver')||null });
+    title:g('h-title'), month:g('h-month'), department:g('h-dept') });
 }
 
 function renderAdd(){
   if(!DATA.report.editable){ document.getElementById('addArea').innerHTML=''; return; }
   document.getElementById('addArea').innerHTML = `
     <label class="camera">📷 צלם/העלה חשבונית
-      <input type="file" accept="image/*" capture="environment" style="display:none" onchange="uploadInvoice(this)">
+      <input type="file" accept="image/*,application/pdf" capture="environment" style="display:none" onchange="uploadInvoice(this)">
     </label>
-    <button class="secondary" onclick="addManual()">+ שורה ידנית</button>`;
+    <span class="hint" style="margin:0">חובה לצרף מסמך לכל הוצאה</span>`;
 }
 
 async function uploadInvoice(input){
@@ -114,14 +112,6 @@ async function uploadInvoice(input){
     input.value='';
     DATA.lines.push(res.line); setTotal(res.total); renderLines();
   }catch(e){ msg.textContent='שגיאה: '+e.message; }
-}
-
-async function addManual(){
-  const r = await fetch('/exp/api/report/'+RID+'/line', {method:'POST',
-    headers:{'X-User': encodeURIComponent(getUser()||'אנונימי')}, body:new FormData()});
-  const res = await r.json();
-  DATA.lines.push(res.line); setTotal(res.total);
-  document.getElementById('ocrMsg').style.display='none'; renderLines();
 }
 
 function renderLines(){
@@ -177,8 +167,8 @@ function renderActions(){
 async function produce(){
   const r = DATA.report;
   if(!DATA.lines.length){ alert('אין חשבוניות בדוח'); return; }
-  if(r.type==='reimbursement' && !document.getElementById('h-approver')?.value){
-    alert('יש לבחור מנהל מאשר'); return; }
+  if(r.type==='reimbursement' && !r.approver_id){
+    alert('לא הוקצה לך מנהל מאשר. פנה למנהל המערכת כדי שיקצה לך מאשר בהגדרות.'); return; }
   const verb = r.type==='credit' ? 'להפיק את הטופס?' : 'להפיק ולשלוח לאישור המנהל?';
   if(!confirm(verb)) return;
   const res = await apiPost('/exp/api/report/'+RID+'/submit', {});

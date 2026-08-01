@@ -565,7 +565,8 @@ def _register_exp(app: FastAPI) -> None:
         con = connect()
         expense.upsert_profile(con, username, body.get("display_name", ""),
                                body.get("email", ""), body.get("department", ""),
-                               bool(body.get("is_active", True)))
+                               bool(body.get("is_active", True)),
+                               approver_id=body.get("approver_id") or None)
         con.close()
         return {"ok": True}
 
@@ -591,14 +592,18 @@ def _register_exp(app: FastAPI) -> None:
         user = get_user(request)
         prof = expense.get_profile(con, user)
         reports = [expense.report_dict(con, r) for r in expense.list_reports(con, user)]
+        approver_name = None
+        if prof and prof["approver_id"] is not None:
+            a = con.execute("SELECT name FROM exp_approvers WHERE id=?",
+                            (prof["approver_id"],)).fetchone()
+            approver_name = a["name"] if a else None
         data = {
             "user": user,
             "profile": {"display_name": (prof["display_name"] if prof else ""),
                         "department": (prof["department"] if prof else ""),
-                        "email": (prof["email"] if prof else "")},
+                        "email": (prof["email"] if prof else ""),
+                        "approver_name": approver_name},
             "reports": reports,
-            "approvers": [expense._dict(r, "id", "name", "email")
-                          for r in expense.list_approvers(con, active_only=True)],
             "departments": [r["name"] for r in expense.list_departments(con, active_only=True)],
         }
         con.close()
@@ -617,7 +622,8 @@ def _register_exp(app: FastAPI) -> None:
         dept = (body.get("department") or (prof["department"] if prof else "") or "").strip()
         default_title = ("ריכוז אשראי" if rtype == expense.CREDIT else "החזר הוצאות") + f" — {month}"
         title = (body.get("title") or default_title).strip()
-        approver_id = body.get("approver_id") or None
+        # The approver is assigned to the user by the admin (profile), not chosen here.
+        approver_id = prof["approver_id"] if prof else None
         rid = expense.create_report(con, user, rtype, month, dept, approver_id, title)
         audit(con, user, "exp_reports", str(rid), "create", None, rtype)
         con.commit()
@@ -669,10 +675,11 @@ def _register_exp(app: FastAPI) -> None:
         if report["status"] not in expense.EDITABLE_STATUSES:
             con.close()
             return JSONResponse({"error": "לא ניתן לערוך דוח בסטטוס זה"}, status_code=409)
+        # approver is admin-assigned (via the user's profile), never changed here
         expense.update_report_fields(
             con, rid, body.get("month", report["month"]),
             body.get("department", report["department"]),
-            body.get("approver_id") or None,
+            report["approver_id"],
             body.get("title", report["title"]))
         con.close()
         return {"ok": True}
@@ -689,24 +696,25 @@ def _register_exp(app: FastAPI) -> None:
             con.close()
             return JSONResponse({"error": "לא ניתן להוסיף שורות לדוח בסטטוס זה"}, status_code=409)
 
-        supplier, amount, raw, ocr_engine = "", 0.0, "", "none"
-        blob = None
-        if file is not None:
-            blob = await file.read()
-            if blob:
-                res = ocr_service.extract_invoice(blob)
-                supplier, amount, raw, ocr_engine = (res.supplier, res.amount or 0.0,
-                                                     res.raw, res.engine)
+        # every expense line MUST have an invoice document attached
+        blob = await file.read() if file is not None else b""
+        if not blob:
+            con.close()
+            return JSONResponse(
+                {"error": "ללא מסמך לא ניתן להוסיף הוצאה — יש לצרף צילום או קובץ של החשבונית"},
+                status_code=400)
+        res = ocr_service.extract_invoice(blob)
+        supplier, amount, raw, ocr_engine = (res.supplier, res.amount or 0.0,
+                                             res.raw, res.engine)
 
         lid = expense.add_line(con, rid, supplier=supplier, amount=amount,
                                ocr_raw=raw)
-        if blob:
-            ext = _img_ext(file.content_type, file.filename)
-            folder = config.UPLOADS / str(rid)
-            folder.mkdir(parents=True, exist_ok=True)
-            path = folder / f"{lid}{ext}"
-            path.write_bytes(blob)
-            expense.set_line_image(con, rid, lid, str(path))
+        ext = _img_ext(file.content_type, file.filename)
+        folder = config.UPLOADS / str(rid)
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{lid}{ext}"
+        path.write_bytes(blob)
+        expense.set_line_image(con, rid, lid, str(path))
 
         row = con.execute("SELECT * FROM exp_lines WHERE id=?", (lid,)).fetchone()
         line = expense.line_dict(con, row)

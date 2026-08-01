@@ -28,7 +28,7 @@
   <!-- approvers -->
   <section class="card" id="card-approvers">
     <h2>מנהלים מאשרים</h2>
-    <p class="hint">העובד יבחר מאשר מרשימה זו בדוח החזר הוצאות; המייל לאישור יישלח לכתובת כאן.</p>
+    <p class="hint">רשימת המנהלים המאשרים. משייכים מאשר קבוע לכל עובד בכרטיס המשתמשים למטה; המייל לאישור יישלח לכתובת שכאן.</p>
     <table class="grid"><thead><tr>
       <th>שם</th><th>מייל</th><th style="width:70px">פעיל</th><th style="width:140px"></th>
     </tr></thead><tbody id="tb-approvers"></tbody></table>
@@ -55,15 +55,17 @@
   <!-- profiles -->
   <section class="card" id="card-profiles">
     <h2>משתמשים ופרופילים</h2>
-    <p class="hint">לכל שם משתמש (מזהה ההתחברות) — שם תצוגה, מייל ומחלקת ברירת מחדל. אלה יופיעו אוטומטית בדוחות שהעובד יוצר.</p>
+    <p class="hint">לכל שם משתמש (מזהה ההתחברות) — שם תצוגה, מייל, מחלקה, <b>ומנהל מאשר קבוע</b>.
+      המאשר נקבע כאן ע״י מנהל המערכת בלבד — העובד אינו בוחר אותו בעצמו.</p>
     <table class="grid"><thead><tr>
-      <th>שם משתמש</th><th>שם תצוגה</th><th>מייל</th><th>מחלקה</th><th style="width:70px">פעיל</th><th style="width:140px"></th>
+      <th>שם משתמש</th><th>שם תצוגה</th><th>מייל</th><th>מחלקה</th><th>מנהל מאשר</th><th style="width:70px">פעיל</th><th style="width:140px"></th>
     </tr></thead><tbody id="tb-profiles"></tbody></table>
     <div class="addrow">
       <input id="new-prof-user" placeholder="שם משתמש (התחברות)">
       <input id="new-prof-name" placeholder="שם תצוגה">
       <input id="new-prof-email" placeholder="מייל" type="email">
       <input id="new-prof-dept" placeholder="מחלקה">
+      <select id="new-prof-appr"></select>
       <button onclick="addProfile()">הוסף</button>
     </div>
   </section>
@@ -73,7 +75,8 @@
 
 {% block scripts %}
 <script>
-let DEPTS = [];  // active department names, for the profile dropdown
+let DEPTS = [];       // active department names, for the profile dropdown
+let APPROVERS = [];   // {id,name} active approvers, for the per-user approver dropdown
 
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g, c => (
   {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -81,10 +84,17 @@ function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g, c => (
 async function load(){
   const d = await fetch('/exp/api/settings').then(r=>r.json());
   DEPTS = (d.departments||[]).filter(x=>x.is_active).map(x=>x.name);
+  APPROVERS = (d.approvers||[]).filter(x=>x.is_active);
   renderCategories(d.categories);
   renderApprovers(d.approvers);
   renderDepartments(d.departments);
   renderProfiles(d.profiles);
+  document.getElementById('new-prof-appr').innerHTML = apprOptions(null);
+}
+
+function apprOptions(sel){
+  return ['<option value="">— מנהל מאשר —</option>'].concat(APPROVERS.map(a=>
+    `<option value="${a.id}" ${a.id===sel?'selected':''}>${esc(a.name)}</option>`)).join('');
 }
 
 function chk(on){ return `<input type="checkbox" ${on?'checked':''}>`; }
@@ -197,20 +207,23 @@ function renderProfiles(rows){
       <td><input class="f-name" value="${esc(r.display_name)}"></td>
       <td><input class="f-email" value="${esc(r.email)}" type="email"></td>
       <td><select class="f-dept">${deptOptions(r.department)}</select></td>
+      <td><select class="f-appr">${apprOptions(r.approver_id)}</select></td>
       <td class="c">${chk(r.is_active)}</td>
       <td class="c">
         <button class="secondary sm" onclick="saveProfile(this)">שמור</button>
         <button class="danger sm" onclick="delProfile(this)">מחק</button>
       </td>
-    </tr>`).join('') || emptyRow(5);
+    </tr>`).join('') || emptyRow(6);
 }
 async function addProfile(){
   const username=val('new-prof-user'); if(!username){ alert('שם משתמש נדרש'); return; }
   await apiPost('/exp/api/settings/profile', {
     username, display_name:val('new-prof-name'),
-    email:val('new-prof-email'), department:val('new-prof-dept') });
+    email:val('new-prof-email'), department:val('new-prof-dept'),
+    approver_id: document.getElementById('new-prof-appr').value || null });
   ['new-prof-user','new-prof-name','new-prof-email','new-prof-dept']
-    .forEach(id=>document.getElementById(id).value=''); load();
+    .forEach(id=>document.getElementById(id).value='');
+  document.getElementById('new-prof-appr').value=''; load();
 }
 async function saveProfile(btn){
   const tr=btn.closest('tr');
@@ -219,6 +232,7 @@ async function saveProfile(btn){
     display_name: tr.querySelector('.f-name').value,
     email: tr.querySelector('.f-email').value,
     department: tr.querySelector('.f-dept').value,
+    approver_id: tr.querySelector('.f-appr').value || null,
     is_active: tr.querySelector('input[type=checkbox]').checked });
   flash(btn);
 }
