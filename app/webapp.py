@@ -11,9 +11,13 @@ Both share login, session handling, templates and the SQLite layer; ``create_app
 decides which route groups are mounted. The DB file, session cookie and landing
 page differ per entrypoint so the two can run side-by-side without interfering.
 """
+import mimetypes
 import os
 from pathlib import Path
 from urllib.parse import quote, unquote
+
+# so StaticFiles serves the PWA manifest with the correct Content-Type
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
