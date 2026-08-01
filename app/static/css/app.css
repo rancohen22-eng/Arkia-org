@@ -17,8 +17,12 @@
 *{ box-sizing:border-box; }
 html{ -webkit-text-size-adjust:100%; }
 body{ font-family:"Segoe UI Variable Text","Segoe UI",system-ui,"Assistant","Rubik",Arial,sans-serif;
-  margin:0; color:var(--ink); background:var(--bg); line-height:1.5;
-  -webkit-font-smoothing:antialiased; }
+  margin:0; color:var(--ink); line-height:1.5; -webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(880px 460px at 100% -6%, #e7eeff 0%, transparent 55%),
+    radial-gradient(680px 380px at -8% 2%, #e7faf6 0%, transparent 52%),
+    var(--bg);
+  background-attachment:fixed; }
 a{ color:var(--brand); }
 
 /* ---------- header ---------- */
@@ -42,7 +46,29 @@ header .user{ font-size:13px; opacity:.95; white-space:nowrap; }
 header .user a{ color:#fff; text-decoration:none; opacity:.85; }
 header .user a:hover{ opacity:1; text-decoration:underline; }
 
-main{ padding:clamp(16px,3vw,26px) clamp(14px,4vw,26px) 56px; max-width:1000px; margin:0 auto; }
+main{ padding:clamp(16px,3vw,26px) clamp(14px,4vw,26px) 56px; max-width:1000px; margin:0 auto;
+  animation:fadeup .34s ease both; }
+@keyframes fadeup{ from{ opacity:0; transform:translateY(7px); } to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion:reduce){ *{ animation:none !important; } }
+
+/* ---------- dashboard stat tiles ---------- */
+.statrow{ display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr)); gap:14px;
+  margin:0 0 20px; max-width:920px; }
+.stat{ display:flex; align-items:center; gap:13px; background:var(--card); border:1px solid var(--line);
+  border-radius:var(--radius); padding:15px 17px; box-shadow:var(--shadow);
+  transition:transform .12s, box-shadow .15s; }
+.stat:hover{ transform:translateY(-2px); box-shadow:var(--shadow-lg); }
+.stat-ic{ display:grid; place-items:center; width:44px; height:44px; border-radius:13px; font-size:20px;
+  background:#eaf0fc; color:var(--brand); flex:none; font-weight:700; }
+.stat-num{ font-size:25px; font-weight:800; color:var(--ink); line-height:1.05; letter-spacing:-.4px; }
+.stat-lbl{ font-size:12.5px; color:var(--muted); margin-top:3px; font-weight:650; }
+.stat.amber .stat-ic{ background:#fef3c7; color:#b45309; }
+.stat.green .stat-ic{ background:#dcfce7; color:#15803d; }
+.stat.brand{ background:linear-gradient(125deg,var(--brand-d),var(--brand)); border-color:transparent;
+  box-shadow:0 16px 34px -16px rgba(27,79,214,.75); }
+.stat.brand .stat-ic{ background:rgba(255,255,255,.2); color:#fff; }
+.stat.brand .stat-num{ color:#fff; font-size:21px; }
+.stat.brand .stat-lbl{ color:rgba(255,255,255,.82); }
 
 h1{ font-size:clamp(20px,3.4vw,25px); color:var(--ink); margin:4px 0 12px; font-weight:800;
   letter-spacing:-.2px; }
@@ -76,11 +102,17 @@ a.linkbtn:hover{ background:#e4eaf4; }
 
 /* ---------- login ---------- */
 .loginbg{ min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;
-  background:radial-gradient(1200px 600px at 80% -10%,#3b82f6 0%,transparent 60%),
-             linear-gradient(160deg,#14367f,#1b4fd6); }
-.logincard{ background:var(--card); border-radius:20px; padding:30px 32px; width:360px; max-width:92vw;
-  box-shadow:var(--shadow-lg); }
-.logincard h1{ text-align:center; margin:0 0 18px; font-size:20px; color:var(--ink); }
+  background:radial-gradient(1100px 560px at 82% -12%, #60a5fa 0%, transparent 58%),
+             linear-gradient(155deg,#0f2a63,#1b4fd6 55%,#3b82f6);
+  background-size:180% 180%; animation:bgshift 20s ease infinite; }
+@keyframes bgshift{ 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+.logincard{ background:var(--card); border-radius:22px; padding:32px 34px; width:370px; max-width:92vw;
+  box-shadow:var(--shadow-lg); animation:fadeup .4s ease both; }
+.login-logo{ width:58px; height:58px; margin:0 auto 10px; display:grid; place-items:center;
+  border-radius:17px; background:linear-gradient(125deg,var(--brand-d),var(--brand)); color:#fff;
+  font-size:27px; transform:rotate(-8deg); box-shadow:0 14px 30px -12px rgba(27,79,214,.85); }
+.logincard h1{ text-align:center; margin:0; font-size:20px; color:var(--ink); font-weight:800; }
+.login-sub{ text-align:center; color:var(--muted); font-size:13px; margin:4px 0 16px; }
 .logincard label{ display:block; font-size:13px; color:var(--muted); margin:14px 0 0; font-weight:600; }
 .logincard input{ width:100%; padding:11px 13px; margin-top:6px; border:1px solid #cbd5e1;
   border-radius:var(--radius-xs); font-size:15px; font-family:inherit; transition:border .15s, box-shadow .15s; }
