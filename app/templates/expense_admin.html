@@ -4,7 +4,7 @@
   <h1>הגדרות · החזרי הוצאות וריכוז אשראי</h1>
   <div class="toolbar">
     <a class="linkbtn" href="/exp">→ חזרה למערכת ההחזרים</a>
-    <a class="linkbtn" href="/">עץ ארגוני</a>
+    {% if request.app.state.include_org %}<a class="linkbtn" href="/">עץ ארגוני</a>{% endif %}
   </div>
 </div>
 <p class="hint">מסך זה פתוח למנהל מערכת בלבד. כאן מגדירים את הרשימות שהעובדים בוחרים מהן.</p>

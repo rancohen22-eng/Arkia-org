@@ -17,6 +17,7 @@ app = create_app(
     include_org=True,
     include_exp=True,
     title="עץ ארגוני — ארקיע",
+    site_name="עץ ארגוני · ארקיע",
     session_cookie="arkia_org_session",
     home_path="/",
 )

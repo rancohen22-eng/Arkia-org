@@ -19,6 +19,7 @@ app = create_app(
     include_org=False,
     include_exp=True,
     title="החזרי הוצאות — ארקיע",
+    site_name="החזרי הוצאות · ארקיע",
     session_cookie="arkia_exp_session",
     home_path="/exp",
 )

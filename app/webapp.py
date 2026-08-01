@@ -1024,6 +1024,7 @@ def _register_exp(app: FastAPI) -> None:
 
 def create_app(*, include_org: bool = True, include_exp: bool = True,
                title: str = "עץ ארגוני — ארקיע",
+               site_name: str = "עץ ארגוני · ארקיע",
                session_cookie: str = "arkia_org_session",
                home_path: str = "/") -> FastAPI:
     """Build an ASGI app with the requested route groups.
@@ -1031,10 +1032,14 @@ def create_app(*, include_org: bool = True, include_exp: bool = True,
     include_org / include_exp choose which module is mounted. session_cookie and
     home_path are kept distinct per entrypoint so two services on the same host
     (e.g. the org tree and a standalone expense service) don't share a session or
-    redirect to each other's landing page.
+    redirect to each other's landing page. include_org / site_name are exposed on
+    app.state so templates can hide org-tree links and show the right brand when
+    the expense service runs standalone.
     """
     app = FastAPI(title=title)
     app.state.home_path = home_path
+    app.state.include_org = include_org
+    app.state.site_name = site_name
     app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
     # login gate (added first → runs inside the session middleware below)

@@ -1,15 +1,16 @@
 name: Deploy expense system
 
-# Any push to main also deploys the standalone expense service to /opt/arkia-exp
-# on the Oracle server and restarts arkia-exp. It reuses the same three secrets as
-# the org-chart deploy (SERVER_SSH_KEY / SERVER_HOST / SERVER_USER).
+# The standalone expense service is deployed from its own branch (NOT main), so
+# the org-chart on main is never touched. Every push to that branch syncs the code
+# to /opt/arkia-exp on the Oracle server and restarts arkia-exp. It reuses the same
+# three secrets as the org-chart deploy (SERVER_SSH_KEY / SERVER_HOST / SERVER_USER).
 #
 # NOTE: this only works once the one-time server setup in DEPLOY_EXP.md is done
-# (the /opt/arkia-exp checkout, its .venv, its .env and the arkia-exp service must
-# exist). Until then this job will fail on the restart step — that's expected.
+# (the /opt/arkia-exp checkout, its .venv, its .env, the arkia-exp service, and the
+# passwordless-restart sudoers line). Until then the restart step fails — expected.
 on:
   push:
-    branches: [main]
+    branches: [claude/expense-reimbursement-system-aa0a79]
   workflow_dispatch:
 
 concurrency:
