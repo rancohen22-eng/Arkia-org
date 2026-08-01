@@ -16,7 +16,7 @@
 }
 *{ box-sizing:border-box; }
 html{ -webkit-text-size-adjust:100%; }
-body{ font-family:"Segoe UI Variable Text","Segoe UI",system-ui,"Assistant","Rubik",Arial,sans-serif;
+body{ font-family:"Assistant","Segoe UI",system-ui,"Rubik",Arial,sans-serif;
   margin:0; color:var(--ink); line-height:1.5; -webkit-font-smoothing:antialiased;
   background:
     radial-gradient(880px 460px at 100% -6%, #e7eeff 0%, transparent 55%),
@@ -24,6 +24,8 @@ body{ font-family:"Segoe UI Variable Text","Segoe UI",system-ui,"Assistant","Rub
     var(--bg);
   background-attachment:fixed; }
 a{ color:var(--brand); }
+/* every control inherits the one Hebrew typeface, so letters render identically everywhere */
+input,button,select,textarea{ font-family:inherit; }
 
 /* ---------- header ---------- */
 header{ position:sticky; top:0; z-index:50;
