@@ -634,6 +634,27 @@ def _register_exp(app: FastAPI) -> None:
         con.close()
         return {"id": rid}
 
+    @app.post("/exp/api/report/{rid}/convert")
+    async def exp_api_report_convert(rid: int, request: Request):
+        body = await request.json()
+        con = connect()
+        report = expense.get_report(con, rid)
+        if not _owns(request, report):
+            con.close()
+            return JSONResponse({"error": "אין הרשאה"}, status_code=403)
+        user = get_user(request)
+        if report["status"] == "approved" and not auth.is_admin(user):
+            con.close()
+            return JSONResponse({"error": "לא ניתן להמיר דוח שכבר אושר"}, status_code=409)
+        prof = expense.get_profile(con, user)
+        approver_id = prof["approver_id"] if prof else None
+        expense.convert_report_type(con, rid, body.get("type"), approver_id)
+        audit(con, user, "exp_reports", str(rid), "convert", report["type"],
+              body.get("type"))
+        con.commit()
+        con.close()
+        return {"ok": True}
+
     @app.get("/exp/report/{rid}", response_class=HTMLResponse)
     def exp_report_page(request: Request, rid: int):
         con = connect()

@@ -252,6 +252,27 @@ def add_line(con, rid: int, supplier: str = "", amount: float = 0.0,
     return cur.lastrowid
 
 
+def convert_report_type(con, rid: int, rtype: str, approver_id) -> bool:
+    """Switch a report between reimbursement/credit (to fix a wrong choice at creation).
+    Resets it to an editable draft, fixes the default title prefix and the approver."""
+    report = con.execute("SELECT * FROM exp_reports WHERE id=?", (rid,)).fetchone()
+    if report is None:
+        return False
+    new_type = CREDIT if rtype == CREDIT else REIMBURSEMENT
+    old_prefix = "ריכוז אשראי" if report["type"] == CREDIT else "החזר הוצאות"
+    new_prefix = "ריכוז אשראי" if new_type == CREDIT else "החזר הוצאות"
+    title = (report["title"] or "").strip()
+    if title.startswith(old_prefix):                 # only rewrite an auto-generated title
+        title = (new_prefix + title[len(old_prefix):]).strip()
+    con.execute(
+        "UPDATE exp_reports SET type=?, title=?, approver_id=?, status='draft', "
+        "decision_note=NULL, decided_at=NULL, submitted_at=NULL, sent_to=NULL, sent_at=NULL "
+        "WHERE id=?",
+        (new_type, title, approver_id if new_type == REIMBURSEMENT else None, rid))
+    con.commit()
+    return True
+
+
 def update_line(con, rid: int, lid: int, supplier: str, amount: float,
                 category_id, line_date: str = "", note: str = "") -> bool:
     line = con.execute("SELECT * FROM exp_lines WHERE id=? AND report_id=?",

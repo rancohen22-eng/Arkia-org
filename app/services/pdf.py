@@ -52,11 +52,11 @@ class _PDF(FPDF):
         """Draw the status watermark (ממתין לאישור / אושר / נדחה) behind every page."""
         if not self.wm_text:
             return
-        self.set_font("Dejavu", "B", 62)
+        self.set_font("Dejavu", "B", 68)
         self.set_text_color(*self.wm_color)
         vis = _rtl(self.wm_text)
         try:
-            with self.local_context(fill_opacity=0.13):
+            with self.local_context(fill_opacity=0.20):
                 with self.rotation(28, self.w / 2, self.h / 2):
                     self.text(self.w / 2 - self.get_string_width(vis) / 2,
                               self.h / 2 + 8, vis)

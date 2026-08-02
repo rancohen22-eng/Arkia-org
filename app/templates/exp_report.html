@@ -72,6 +72,7 @@ function renderHead(){
       <label>מנהל מאשר <span class="ro-tag">נקבע ע״י מנהל המערכת</span>
         <input value="${esc(r.approver_name || '— לא הוקצה —')}" disabled></label>` : ''}
     </div>
+    ${r.cancellable ? `<button class="secondary sm" style="margin-top:6px" onclick="convertType()">↔ המר ל${isReimb?'ריכוז אשראי':'החזר הוצאות'}</button>` : ''}
     ${r.status==='rejected' && r.decision_note ? `<div class="rejnote">הדוח נדחה: ${esc(r.decision_note)}</div>`:''}
     ${!r.editable ? `<p class="hint">הדוח אינו ניתן לעריכה בסטטוס זה. ניתן עדיין להוריד PDF ולשלוח במייל.</p>`:''}
   `;
@@ -86,6 +87,15 @@ async function saveHead(){
   const g=id=>{const e=document.getElementById(id);return e?e.value:undefined;};
   await apiPost('/exp/api/report/'+RID+'/update', {
     title:g('h-title'), month:g('h-month'), department:g('h-dept') });
+}
+
+async function convertType(){
+  const to = DATA.report.type==='reimbursement' ? 'credit' : 'reimbursement';
+  const name = to==='credit' ? 'ריכוז אשראי' : 'החזר הוצאות';
+  if(!confirm('להמיר את הדוח ל"'+name+'"? הדוח יחזור למצב טיוטה לעריכה — החשבוניות נשמרות, ותוכל לשלוח לאישור מחדש.')) return;
+  const res = await apiPost('/exp/api/report/'+RID+'/convert', {type: to});
+  if(res && res.error){ alert(res.error); return; }
+  location.reload();
 }
 
 function renderAdd(){
