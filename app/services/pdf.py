@@ -123,20 +123,21 @@ def build_report_pdf(report: dict, lines: list[dict],
     pdf.cell(W, 8, _rtl("ריכוז חשבוניות"), align="R")
     pdf.ln(10)
 
-    widths = [W * 0.12, W * 0.44, W * 0.24, W * 0.20]   # מס׳ | ספק | סיווג | סכום
-    aligns = ["C", "R", "R", "L"]
-    _rtl_row(pdf, ["מס׳", "ספק", "סיווג", "סכום ₪"], widths, aligns, header=True)
+    widths = [W * 0.09, W * 0.19, W * 0.32, W * 0.20, W * 0.20]  # מס׳ | תאריך | ספק | סיווג | סכום
+    aligns = ["C", "C", "R", "R", "L"]
+    header = ["מס׳", "תאריך", "ספק", "סיווג", "סכום ₪"]
+    _rtl_row(pdf, header, widths, aligns, header=True)
     for ln in lines:
         if pdf.get_y() > pdf.h - 25:
             pdf.add_page()
-            _rtl_row(pdf, ["מס׳", "ספק", "סיווג", "סכום ₪"], widths, aligns, header=True)
-        _rtl_row(pdf, [str(ln["seq"]), ln.get("supplier", ""),
+            _rtl_row(pdf, header, widths, aligns, header=True)
+        _rtl_row(pdf, [str(ln["seq"]), ln.get("date", "") or "", ln.get("supplier", ""),
                        ln.get("category", "") or "", _money(ln.get("amount"))],
                  widths, aligns)
 
     # grand total row
-    _rtl_row(pdf, ["", "", "סה\"כ", _money(report.get("total"))],
-             widths, ["C", "R", "R", "L"], header=True)
+    _rtl_row(pdf, ["", "", "", "סה\"כ", _money(report.get("total"))],
+             widths, ["C", "C", "R", "R", "L"], header=True)
     pdf.ln(6)
 
     # ---- subtotals per category ----

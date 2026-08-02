@@ -24,9 +24,9 @@ async function load(){
   if(d.error){ document.getElementById('app').innerHTML='<div class="card">'+esc(d.error)+'</div>'; return; }
   const r = d.report, s = STATUS[r.status]||[r.status,'st-draft'];
   const rows = (d.lines||[]).map(l=>`<tr>
-    <td class="c">${l.seq}</td><td>${esc(l.supplier)}</td>
+    <td class="c">${l.seq}</td><td class="c">${esc(l.date||'')}</td><td>${esc(l.supplier)}</td>
     <td>${esc(l.category||'')}</td><td style="text-align:left">${money(l.amount)}</td></tr>`).join('')
-    || '<tr><td colspan="4" class="empty">אין חשבוניות</td></tr>';
+    || '<tr><td colspan="5" class="empty">אין חשבוניות</td></tr>';
   const decided = r.status!=='pending';
   document.getElementById('app').innerHTML = `
     <section class="card">
@@ -38,7 +38,7 @@ async function load(){
         <tr><td style="color:#64748b;padding:2px 10px 2px 0">סכום ההחזר</td>
             <td style="font-size:18px;font-weight:800;color:#123a86">₪ ${money(r.total)}</td></tr>
       </table>
-      <table class="grid"><thead><tr><th style="width:44px">מס׳</th><th>ספק</th>
+      <table class="grid"><thead><tr><th style="width:44px">מס׳</th><th style="width:110px">תאריך</th><th>ספק</th>
         <th>סיווג</th><th style="width:110px">סכום ₪</th></tr></thead><tbody>${rows}</tbody></table>
       <div class="toolbar"><a class="linkbtn" href="/exp/approve/${encodeURIComponent(TOKEN)}/pdf" target="_blank">
         ⬇ צפייה ב-PDF המלא (כולל מסמכים סרוקים)</a></div>

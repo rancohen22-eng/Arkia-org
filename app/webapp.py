@@ -739,7 +739,8 @@ def _register_exp(app: FastAPI) -> None:
             con.close()
             return JSONResponse({"error": "לא ניתן לערוך דוח בסטטוס זה"}, status_code=409)
         ok = expense.update_line(con, rid, lid, body.get("supplier", ""),
-                                 body.get("amount", 0), body.get("category_id") or None)
+                                 body.get("amount", 0), body.get("category_id") or None,
+                                 line_date=body.get("date", ""))
         total = expense.report_dict(con, expense.get_report(con, rid))["total"]
         con.close()
         if not ok:
@@ -753,9 +754,10 @@ def _register_exp(app: FastAPI) -> None:
         if not _owns(request, report):
             con.close()
             return JSONResponse({"error": "אין הרשאה"}, status_code=403)
-        if report["status"] not in expense.EDITABLE_STATUSES:
+        # a line may be cancelled until the report is approved (even while pending)
+        if report["status"] == "approved" and not auth.is_admin(get_user(request)):
             con.close()
-            return JSONResponse({"error": "לא ניתן לערוך דוח בסטטוס זה"}, status_code=409)
+            return JSONResponse({"error": "לא ניתן לבטל שורה בדוח שכבר אושר"}, status_code=409)
         path = expense.delete_line(con, rid, lid)
         total = expense.report_dict(con, expense.get_report(con, rid))["total"]
         con.close()

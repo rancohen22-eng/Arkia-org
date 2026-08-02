@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS exp_lines (
     seq INTEGER NOT NULL DEFAULT 0,
     supplier TEXT NOT NULL DEFAULT '',
     amount REAL NOT NULL DEFAULT 0,
+    line_date TEXT NOT NULL DEFAULT '',           -- the expense date on the invoice (YYYY-MM-DD)
     category_id INTEGER REFERENCES exp_categories(id),
     invoice_path TEXT,                            -- data/uploads/... (never in the repo)
     ocr_raw TEXT,                                 -- raw OCR text, for debugging/audit
@@ -151,6 +152,9 @@ def _migrate(con: sqlite3.Connection) -> None:
     cols = {r["name"] for r in con.execute("PRAGMA table_info(exp_profiles)").fetchall()}
     if "approver_id" not in cols:
         con.execute("ALTER TABLE exp_profiles ADD COLUMN approver_id INTEGER")
+    lcols = {r["name"] for r in con.execute("PRAGMA table_info(exp_lines)").fetchall()}
+    if "line_date" not in lcols:
+        con.execute("ALTER TABLE exp_lines ADD COLUMN line_date TEXT NOT NULL DEFAULT ''")
 
 
 def init_db(con: sqlite3.Connection) -> None:

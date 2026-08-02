@@ -239,28 +239,29 @@ def get_lines(con, rid: int):
 
 def add_line(con, rid: int, supplier: str = "", amount: float = 0.0,
              category_id=None, invoice_path: str | None = None,
-             ocr_raw: str = "") -> int:
+             ocr_raw: str = "", line_date: str = "") -> int:
     nxt = (con.execute("SELECT COALESCE(MAX(seq),0)+1 n FROM exp_lines WHERE report_id=?",
                        (rid,)).fetchone()["n"])
     cur = con.execute(
-        "INSERT INTO exp_lines (report_id, seq, supplier, amount, category_id, "
-        "invoice_path, ocr_raw) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (rid, nxt, (supplier or "").strip(), float(amount or 0), category_id,
-         invoice_path, ocr_raw or ""))
+        "INSERT INTO exp_lines (report_id, seq, supplier, amount, line_date, category_id, "
+        "invoice_path, ocr_raw) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (rid, nxt, (supplier or "").strip(), float(amount or 0), (line_date or "").strip(),
+         category_id, invoice_path, ocr_raw or ""))
     _recompute_total(con, rid)
     con.commit()
     return cur.lastrowid
 
 
 def update_line(con, rid: int, lid: int, supplier: str, amount: float,
-                category_id) -> bool:
+                category_id, line_date: str = "") -> bool:
     line = con.execute("SELECT * FROM exp_lines WHERE id=? AND report_id=?",
                        (lid, rid)).fetchone()
     if line is None:
         return False
     con.execute(
-        "UPDATE exp_lines SET supplier=?, amount=?, category_id=? WHERE id=?",
-        ((supplier or "").strip(), float(amount or 0), category_id, lid))
+        "UPDATE exp_lines SET supplier=?, amount=?, line_date=?, category_id=? WHERE id=?",
+        ((supplier or "").strip(), float(amount or 0), (line_date or "").strip(),
+         category_id, lid))
     _recompute_total(con, rid)
     con.commit()
     return True
@@ -351,7 +352,7 @@ def line_dict(con, r) -> dict:
                           (r["category_id"],)).fetchone()
         cat = row["name"] if row else None
     return {"id": r["id"], "seq": r["seq"], "supplier": r["supplier"],
-            "amount": r["amount"], "category_id": r["category_id"],
+            "amount": r["amount"], "date": r["line_date"], "category_id": r["category_id"],
             "category": cat, "has_image": bool(r["invoice_path"])}
 
 
@@ -372,4 +373,6 @@ def report_dict(con, r) -> dict:
         "created_at": r["created_at"], "submitted_at": r["submitted_at"],
         "decided_at": r["decided_at"],
         "editable": r["status"] in EDITABLE_STATUSES,
+        # a report (and its lines) may be cancelled/deleted until the approver approves it
+        "cancellable": r["status"] != "approved",
     }
