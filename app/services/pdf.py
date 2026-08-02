@@ -45,6 +45,25 @@ class _PDF(FPDF):
         self.add_font("Dejavu", "", str(reg))
         self.add_font("Dejavu", "B", str(bold))
         self.set_font("Dejavu", "", 11)
+        self.wm_text = ""            # diagonal watermark, set per report before add_page()
+        self.wm_color = MUTED
+
+    def header(self):
+        """Draw the status watermark (ממתין לאישור / אושר / נדחה) behind every page."""
+        if not self.wm_text:
+            return
+        self.set_font("Dejavu", "B", 62)
+        self.set_text_color(*self.wm_color)
+        vis = _rtl(self.wm_text)
+        try:
+            with self.local_context(fill_opacity=0.13):
+                with self.rotation(28, self.w / 2, self.h / 2):
+                    self.text(self.w / 2 - self.get_string_width(vis) / 2,
+                              self.h / 2 + 8, vis)
+        except Exception:
+            pass
+        self.set_text_color(*INK)
+        self.set_font("Dejavu", "", 11)
 
     def rcell(self, w, h, txt, border=0, align="R", fill=False):
         self.cell(w, h, _rtl(txt), border=border, align=align, fill=fill)
@@ -87,6 +106,10 @@ def build_report_pdf(report: dict, lines: list[dict],
     """`report` needs title/owner_name/department/month/status/total.
     `lines` need seq/supplier/amount/category/invoice_bytes (bytes or None)."""
     pdf = _PDF()
+    # diagonal status watermark on every page (credit compilations aren't approved → none)
+    wm = None if report.get("type") == "credit" else _WM.get(report.get("status", ""))
+    if wm:
+        pdf.wm_text, pdf.wm_color = wm
     pdf.add_page()
     W = pdf.w - pdf.l_margin - pdf.r_margin
 
@@ -115,6 +138,10 @@ def build_report_pdf(report: dict, lines: list[dict],
         pdf.set_font("Dejavu", "", 11)
         pdf.ln(7)
     pdf.ln(3)
+
+    # ---- approval stamp (page 1) — appears once the approver has approved ----
+    if report.get("status") == "approved":
+        _draw_stamp(pdf, report.get("approver_name") or "", _fmt_dt(report.get("decided_at")))
 
     # ---- invoice lines table ----
     pdf.set_font("Dejavu", "B", 12)
@@ -215,3 +242,54 @@ def _normalize_image(blob: bytes):
 
 _STATUS_HE = {"draft": "בהכנה", "pending": "ממתין לאישור",
               "approved": "אושר", "rejected": "נדחה", "compiled": "רוכז"}
+
+# watermark text + colour per status ("still not approved" covers draft/pending)
+_WM = {
+    "draft":    ("ממתין לאישור", (200, 145, 20)),
+    "pending":  ("ממתין לאישור", (200, 145, 20)),
+    "rejected": ("נדחה", (200, 45, 45)),
+    "approved": ("אושר", (22, 130, 70)),
+}
+
+
+def _fmt_dt(s: str | None) -> str:
+    """'YYYY-MM-DD HH:MM:SS' → 'DD/MM/YYYY  HH:MM' (best-effort)."""
+    s = (s or "").strip()
+    if not s:
+        return ""
+    try:
+        date_part, _, time_part = s.partition(" ")
+        y, m, d = date_part.split("-")
+        hm = ":".join(time_part.split(":")[:2]) if time_part else ""
+        return f"{d}/{m}/{y}" + (f"  {hm}" if hm else "")
+    except Exception:
+        return s
+
+
+def _draw_stamp(pdf: _PDF, name: str, when: str) -> None:
+    """Rotated green 'approved' stamp with approver + approval time, top-left of page 1."""
+    x, y, w, h = pdf.l_margin + 1, 30, 64, 27
+    green = (22, 130, 70)
+    y0 = pdf.get_y()
+    try:
+        with pdf.rotation(-7, x + w / 2, y + h / 2):
+            pdf.set_draw_color(*green)
+            pdf.set_line_width(1.0); pdf.rect(x, y, w, h)
+            pdf.set_line_width(0.3); pdf.rect(x + 1.8, y + 1.8, w - 3.6, h - 3.6)
+            pdf.set_text_color(*green)
+
+            def centered(txt, yy, size, style="B"):
+                pdf.set_font("Dejavu", style, size)
+                v = _rtl(txt)
+                pdf.text(x + w / 2 - pdf.get_string_width(v) / 2, yy, v)
+
+            centered("אושר ✓", y + 11, 18)
+            if name:
+                centered(name, y + 18, 10.5)
+            if when:
+                centered(when, y + 24, 8.5, style="")
+    except Exception:
+        pass
+    pdf.set_line_width(0.2); pdf.set_draw_color(*LINE)
+    pdf.set_text_color(*INK); pdf.set_font("Dejavu", "", 11)
+    pdf.set_y(y0)
