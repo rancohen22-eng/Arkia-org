@@ -134,6 +134,15 @@ def build_report_pdf(report: dict, lines: list[dict],
         _rtl_row(pdf, [str(ln["seq"]), ln.get("date", "") or "", ln.get("supplier", ""),
                        ln.get("category", "") or "", _money(ln.get("amount"))],
                  widths, aligns)
+        note = (ln.get("note") or "").strip()
+        if note:
+            pdf.set_font("Dejavu", "", 8.5)
+            pdf.set_text_color(90, 100, 120)
+            pdf.set_draw_color(*LINE)
+            pdf.set_x(pdf.l_margin)
+            pdf.cell(W, 6, _rtl(pdf._fit("הערה: " + note, W - 4, 8.5)),
+                     border="LRB", align="R")
+            pdf.ln(6)
 
     # grand total row
     _rtl_row(pdf, ["", "", "", "סה\"כ", _money(report.get("total"))],

@@ -12,8 +12,8 @@
     </div>
     <div id="ocrMsg" class="ocrmsg" style="display:none"></div>
     <table class="grid" id="linesTable"><thead><tr>
-      <th style="width:44px">מס׳</th><th style="width:56px">מסמך</th><th style="width:150px">תאריך</th>
-      <th>ספק</th><th style="width:118px">סכום ₪</th><th>סיווג</th><th style="width:150px"></th>
+      <th style="width:44px">מס׳</th><th style="width:52px">מסמך</th><th style="width:140px">תאריך</th>
+      <th>ספק</th><th style="width:104px">סכום ₪</th><th style="width:128px">סיווג</th><th>הערה</th><th style="width:140px"></th>
     </tr></thead><tbody id="linesBody"></tbody></table>
     <div class="totalbar">סה"כ: <b id="grandTotal">₪ 0.00</b></div>
   </section>
@@ -119,7 +119,7 @@ async function uploadInvoice(input){
 function renderLines(){
   const editable = DATA.report.editable;
   const body = document.getElementById('linesBody');
-  if(!DATA.lines.length){ body.innerHTML='<tr><td colspan="8" class="empty">עדיין אין חשבוניות.</td></tr>';
+  if(!DATA.lines.length){ body.innerHTML='<tr><td colspan="9" class="empty">עדיין אין חשבוניות.</td></tr>';
     setTotal(DATA.report.total); return; }
   const cancellable = DATA.report.cancellable;
   body.innerHTML = DATA.lines.map(l=>`
@@ -130,6 +130,7 @@ function renderLines(){
       <td data-label="ספק"><input class="f-sup" placeholder="שם הספק" value="${esc(l.supplier)}" ${editable?'':'disabled'}></td>
       <td data-label="סכום ₪"><input class="f-amt" type="number" step="0.01" value="${l.amount}" ${editable?'':'disabled'}></td>
       <td data-label="סיווג"><select class="f-cat" ${editable?'':'disabled'}>${catOptions(l.category_id)}</select></td>
+      <td data-label="הערה"><input class="f-note" placeholder="הערה (אופציונלי)" value="${esc(l.note||'')}" ${editable?'':'disabled'}></td>
       <td class="c actions-cell">
         ${editable?`<button class="secondary sm" onclick="saveLine(this.closest('tr'),this)">שמור</button>`:''}
         ${cancellable?`<button class="danger sm" onclick="delLine(this)">בטל</button>`:''}
@@ -137,7 +138,7 @@ function renderLines(){
     </tr>`).join('');
   if(editable){
     body.querySelectorAll('tr').forEach(tr=>{
-      tr.querySelectorAll('.f-date,.f-sup,.f-amt,.f-cat').forEach(el=>el.addEventListener('change',()=>saveLine(tr)));
+      tr.querySelectorAll('.f-date,.f-sup,.f-amt,.f-cat,.f-note').forEach(el=>el.addEventListener('change',()=>saveLine(tr)));
     });
   }
   setTotal(DATA.report.total);
@@ -152,6 +153,7 @@ function syncRow(tr){
   if(q('.f-sup'))  l.supplier=q('.f-sup').value;
   if(q('.f-amt'))  l.amount=parseFloat(q('.f-amt').value)||0;
   if(q('.f-cat'))  l.category_id=q('.f-cat').value||null;
+  if(q('.f-note')) l.note=q('.f-note').value;
 }
 function syncAllRows(){ document.querySelectorAll('#linesBody tr[data-id]').forEach(syncRow); }
 
@@ -161,6 +163,7 @@ async function saveLine(tr, btn){
     supplier: tr.querySelector('.f-sup').value,
     amount: parseFloat(tr.querySelector('.f-amt').value)||0,
     date: tr.querySelector('.f-date').value,
+    note: tr.querySelector('.f-note').value,
     category_id: tr.querySelector('.f-cat').value || null });
   if(res && res.error){ alert(res.error); return; }
   if(res && res.total!=null) setTotal(res.total);

@@ -24,7 +24,8 @@ async function load(){
   if(d.error){ document.getElementById('app').innerHTML='<div class="card">'+esc(d.error)+'</div>'; return; }
   const r = d.report, s = STATUS[r.status]||[r.status,'st-draft'];
   const rows = (d.lines||[]).map(l=>`<tr>
-    <td class="c">${l.seq}</td><td class="c">${esc(l.date||'')}</td><td>${esc(l.supplier)}</td>
+    <td class="c">${l.seq}</td><td class="c">${esc(l.date||'')}</td>
+    <td>${esc(l.supplier)}${l.note?`<div style="font-size:11px;color:#64748b;margin-top:2px">${esc(l.note)}</div>`:''}</td>
     <td>${esc(l.category||'')}</td><td style="text-align:left">${money(l.amount)}</td></tr>`).join('')
     || '<tr><td colspan="5" class="empty">אין חשבוניות</td></tr>';
   const decided = r.status!=='pending';

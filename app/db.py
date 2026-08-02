@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS exp_lines (
     supplier TEXT NOT NULL DEFAULT '',
     amount REAL NOT NULL DEFAULT 0,
     line_date TEXT NOT NULL DEFAULT '',           -- the expense date on the invoice (YYYY-MM-DD)
+    note TEXT NOT NULL DEFAULT '',                 -- free-text note shown next to the line and in the PDF
     category_id INTEGER REFERENCES exp_categories(id),
     invoice_path TEXT,                            -- data/uploads/... (never in the repo)
     ocr_raw TEXT,                                 -- raw OCR text, for debugging/audit
@@ -155,6 +156,8 @@ def _migrate(con: sqlite3.Connection) -> None:
     lcols = {r["name"] for r in con.execute("PRAGMA table_info(exp_lines)").fetchall()}
     if "line_date" not in lcols:
         con.execute("ALTER TABLE exp_lines ADD COLUMN line_date TEXT NOT NULL DEFAULT ''")
+    if "note" not in lcols:
+        con.execute("ALTER TABLE exp_lines ADD COLUMN note TEXT NOT NULL DEFAULT ''")
 
 
 def init_db(con: sqlite3.Connection) -> None:
