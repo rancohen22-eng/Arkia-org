@@ -215,10 +215,17 @@ table.grid input[type=checkbox]{ width:auto; transform:scale(1.25); accent-color
   header{ flex-wrap:wrap; gap:8px; }
   header nav{ order:3; width:100%; margin:2px 0 0; justify-content:flex-start; }
   header .user{ font-size:12px; }
-  #linesTable, #linesTable thead, #linesTable tbody, #linesTable tr, #linesTable td{ display:block; }
+  #linesTable, #linesTable tbody, #linesTable tr{ display:block; }
   #linesTable thead{ display:none; }
-  #linesTable tr{ border:1px solid var(--line); border-radius:var(--radius-sm); padding:8px 10px;
-    margin-bottom:12px; box-shadow:var(--shadow); }
-  #linesTable td{ border:0; padding:5px 2px; }
-  #linesTable td.c{ text-align:right; }
+  #linesTable tr{ border:1px solid var(--line); border-radius:var(--radius-sm); padding:10px 12px;
+    margin-bottom:12px; box-shadow:var(--shadow); background:#fff; }
+  #linesTable td{ display:flex; align-items:center; gap:10px; border:0; padding:5px 0; text-align:right; }
+  /* each field shows its column name as an inline label on mobile */
+  #linesTable td::before{ content:attr(data-label); flex:0 0 62px; color:var(--muted);
+    font-size:12px; font-weight:700; }
+  #linesTable td > input, #linesTable td > select{ flex:1 1 auto; width:auto; }
+  #linesTable td.actions-cell{ justify-content:stretch; gap:8px; padding-top:9px; margin-top:4px;
+    border-top:1px dashed var(--line); }
+  #linesTable td.actions-cell::before{ content:none; }
+  #linesTable td.actions-cell button{ flex:1; }
 }

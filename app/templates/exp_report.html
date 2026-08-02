@@ -13,7 +13,7 @@
     <div id="ocrMsg" class="ocrmsg" style="display:none"></div>
     <table class="grid" id="linesTable"><thead><tr>
       <th style="width:44px">מס׳</th><th style="width:56px">מסמך</th><th style="width:150px">תאריך</th>
-      <th>ספק</th><th style="width:118px">סכום ₪</th><th>סיווג</th><th style="width:70px"></th>
+      <th>ספק</th><th style="width:118px">סכום ₪</th><th>סיווג</th><th style="width:150px"></th>
     </tr></thead><tbody id="linesBody"></tbody></table>
     <div class="totalbar">סה"כ: <b id="grandTotal">₪ 0.00</b></div>
   </section>
@@ -111,6 +111,7 @@ async function uploadInvoice(input){
     else if(res.ocr.engine.indexOf('error')>=0) msg.textContent='חשבונית נוספה, אך הזיהוי האוטומטי נכשל — מלא ידנית.';
     else msg.textContent='זוהה: ' + (res.ocr.supplier||'—') + ' · ₪ ' + money(res.ocr.amount) + ' (ניתן לתקן).';
     input.value='';
+    syncAllRows();                 // keep already-typed values on existing rows
     DATA.lines.push(res.line); setTotal(res.total); renderLines();
   }catch(e){ msg.textContent='שגיאה: '+e.message; }
 }
@@ -123,13 +124,16 @@ function renderLines(){
   const cancellable = DATA.report.cancellable;
   body.innerHTML = DATA.lines.map(l=>`
     <tr data-id="${l.id}">
-      <td class="c">${l.seq}</td>
-      <td class="c">${l.has_image?`<a href="/exp/report/${RID}/line/${l.id}/image" target="_blank">📄</a>`:'—'}</td>
-      <td><input class="f-date" type="date" value="${esc(l.date||'')}" ${editable?'':'disabled'}></td>
-      <td><input class="f-sup" value="${esc(l.supplier)}" ${editable?'':'disabled'}></td>
-      <td><input class="f-amt" type="number" step="0.01" value="${l.amount}" ${editable?'':'disabled'}></td>
-      <td><select class="f-cat" ${editable?'':'disabled'}>${catOptions(l.category_id)}</select></td>
-      <td class="c">${cancellable?`<button class="danger sm" onclick="delLine(this)">בטל</button>`:''}</td>
+      <td class="c" data-label="מס׳">${l.seq}</td>
+      <td class="c" data-label="מסמך">${l.has_image?`<a href="/exp/report/${RID}/line/${l.id}/image" target="_blank">📄 צפייה</a>`:'—'}</td>
+      <td data-label="תאריך"><input class="f-date" type="date" value="${esc(l.date||'')}" ${editable?'':'disabled'}></td>
+      <td data-label="ספק"><input class="f-sup" placeholder="שם הספק" value="${esc(l.supplier)}" ${editable?'':'disabled'}></td>
+      <td data-label="סכום ₪"><input class="f-amt" type="number" step="0.01" value="${l.amount}" ${editable?'':'disabled'}></td>
+      <td data-label="סיווג"><select class="f-cat" ${editable?'':'disabled'}>${catOptions(l.category_id)}</select></td>
+      <td class="c actions-cell">
+        ${editable?`<button class="secondary sm" onclick="saveLine(this.closest('tr'),this)">שמור</button>`:''}
+        ${cancellable?`<button class="danger sm" onclick="delLine(this)">בטל</button>`:''}
+      </td>
     </tr>`).join('');
   if(editable){
     body.querySelectorAll('tr').forEach(tr=>{
@@ -139,13 +143,28 @@ function renderLines(){
   setTotal(DATA.report.total);
 }
 
-async function saveLine(tr){
+// keep the in-memory model in sync with what's typed, so re-rendering (e.g. after
+// adding another invoice) never discards unsaved edits on existing rows.
+function syncRow(tr){
+  const l = DATA.lines.find(x=>String(x.id)===tr.dataset.id); if(!l) return;
+  const q=s=>tr.querySelector(s);
+  if(q('.f-date')) l.date=q('.f-date').value;
+  if(q('.f-sup'))  l.supplier=q('.f-sup').value;
+  if(q('.f-amt'))  l.amount=parseFloat(q('.f-amt').value)||0;
+  if(q('.f-cat'))  l.category_id=q('.f-cat').value||null;
+}
+function syncAllRows(){ document.querySelectorAll('#linesBody tr[data-id]').forEach(syncRow); }
+
+async function saveLine(tr, btn){
+  syncRow(tr);
   const res = await apiPost('/exp/api/report/'+RID+'/line/'+tr.dataset.id, {
     supplier: tr.querySelector('.f-sup').value,
     amount: parseFloat(tr.querySelector('.f-amt').value)||0,
     date: tr.querySelector('.f-date').value,
     category_id: tr.querySelector('.f-cat').value || null });
-  if(res.total!=null) setTotal(res.total);
+  if(res && res.error){ alert(res.error); return; }
+  if(res && res.total!=null) setTotal(res.total);
+  if(btn){ const t=btn.textContent; btn.textContent='נשמר ✓'; setTimeout(()=>{btn.textContent=t;}, 1300); }
 }
 async function delLine(btn){
   if(!confirm('לבטל את השורה?')) return;
