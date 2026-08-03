@@ -48,16 +48,20 @@ def send_mail(to: str | list[str], subject: str, html: str,
     if not config.mail_configured():
         return {"sent": False, "path": _spool_to_outbox(msg)}
 
-    ctx = ssl.create_default_context()
-    with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=30) as s:
-        s.ehlo()
-        if config.SMTP_STARTTLS:
-            s.starttls(context=ctx)
+    # never raise to the caller — a mail hiccup must not break submit / send flows
+    try:
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=30) as s:
             s.ehlo()
-        if config.SMTP_USERNAME:
-            s.login(config.SMTP_USERNAME, config.SMTP_PASSWORD)
-        s.send_message(msg)
-    return {"sent": True, "path": None}
+            if config.SMTP_STARTTLS:
+                s.starttls(context=ctx)
+                s.ehlo()
+            if config.SMTP_USERNAME:
+                s.login(config.SMTP_USERNAME, config.SMTP_PASSWORD)
+            s.send_message(msg)
+        return {"sent": True, "path": None}
+    except Exception as e:
+        return {"sent": False, "path": _spool_to_outbox(msg), "error": str(e)}
 
 
 def _spool_to_outbox(msg: EmailMessage) -> str:

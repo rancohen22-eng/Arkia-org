@@ -843,7 +843,8 @@ def _register_exp(app: FastAPI) -> None:
         result = mailer.send_mail(rep["approver_email"], f"בקשת אישור · {rep['title']}",
                                   html, [(_pdf_name(rep), pdf_bytes, "pdf")])
         con.close()
-        return {"ok": True, "status": "pending", "mail_sent": result["sent"]}
+        return {"ok": True, "status": "pending", "mail_sent": result["sent"],
+                "mail_error": result.get("error")}
 
     @app.post("/exp/api/report/{rid}/send")
     async def exp_api_report_send(rid: int, request: Request):
@@ -864,9 +865,10 @@ def _register_exp(app: FastAPI) -> None:
         html = mailer.plain_report_html(rep, _mail_lines(ldicts), rep["owner_name"])
         result = mailer.send_mail(email, rep["title"], html,
                                   [(_pdf_name(rep), pdf_bytes, "pdf")])
-        expense.record_sent(con, rid, email)
+        if result["sent"]:
+            expense.record_sent(con, rid, email)
         con.close()
-        return {"ok": True, "mail_sent": result["sent"]}
+        return {"ok": True, "mail_sent": result["sent"], "mail_error": result.get("error")}
 
     @app.get("/exp/report/{rid}/pdf")
     def exp_report_pdf(rid: int, request: Request):

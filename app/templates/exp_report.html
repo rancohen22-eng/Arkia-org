@@ -255,7 +255,8 @@ function renderActions(){
 function shareWhatsApp(){
   if(!DATA.approve_url) return;
   const r = DATA.report;
-  const msg = 'שלום, הוגש לאישורך דוח "' + r.title + '"'
+  const hello = r.approver_name ? ('שלום ' + r.approver_name + ',') : 'שלום,';
+  const msg = hello + ' הוגש לאישורך דוח "' + r.title + '"'
     + (r.owner_name ? ' מאת ' + r.owner_name : '') + '.\n'
     + 'לצפייה ואישור: ' + DATA.approve_url;
   window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
@@ -284,8 +285,9 @@ async function produce(){
   const res = await apiPost('/exp/api/report/'+RID+'/submit', {});
   if(res.error){ alert(res.error); return; }
   if(r.type==='credit') alert('הטופס הופק. ניתן להוריד PDF או לשלוח במייל.');
-  else alert(res.mail_sent ? 'הטופס נשלח לאישור המנהל.' :
-    'הטופס הופק. המייל יישלח כשיוגדר שרת דואר (נשמר כרגע ב-outbox).');
+  else if(res.mail_sent) alert('הטופס נשלח לאישור המנהל במייל.');
+  else alert('הדוח הוגש לאישור (סטטוס: ממתין לאישור), אך שליחת המייל למנהל לא הצליחה.\n'
+    + 'שלח למנהל את קישור האישור בעזרת הכפתור "שתף בוואטסאפ" שיופיע כעת.');
   load();
 }
 
@@ -294,8 +296,12 @@ async function sendToEmail(){
   if(email.indexOf('@')<0){ alert('כתובת מייל לא תקינה'); return; }
   const res = await apiPost('/exp/api/report/'+RID+'/send', {email});
   if(res.error){ alert(res.error); return; }
-  alert(res.mail_sent ? 'נשלח אל '+email : 'נשמר לשליחה (outbox) עד להגדרת שרת דואר.');
-  document.getElementById('sentNote').textContent = 'נשלח לאחרונה אל ' + email;
+  if(res.mail_sent){
+    alert('נשלח אל ' + email);
+    document.getElementById('sentNote').textContent = 'נשלח לאחרונה אל ' + email;
+  } else {
+    alert('שליחת המייל לא הצליחה.' + (res.mail_error ? '\n(' + res.mail_error + ')' : ''));
+  }
 }
 
 load().catch(e=>alert('שגיאה: '+e.message));
