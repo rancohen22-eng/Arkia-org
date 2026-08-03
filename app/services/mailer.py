@@ -34,16 +34,28 @@ def send_mail(to: str | list[str], subject: str, html: str,
     if not recipients:
         raise ValueError("no recipient")
 
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = formataddr((config.SMTP_FROM_NAME, config.SMTP_FROM))
-    msg["To"] = ", ".join(recipients)
-    msg["Message-ID"] = make_msgid()
-    msg.set_content("הודעה זו דורשת תצוגת HTML.")
-    msg.add_alternative(html, subtype="html")
-    for filename, blob, subtype in (attachments or []):
-        maintype = "application" if subtype in ("pdf", "octet-stream") else "image"
-        msg.add_attachment(blob, maintype=maintype, subtype=subtype, filename=filename)
+    def _build(html_body, atts):
+        m = EmailMessage()
+        m["Subject"] = subject
+        m["From"] = formataddr((config.SMTP_FROM_NAME, config.SMTP_FROM))
+        m["To"] = ", ".join(recipients)
+        m["Message-ID"] = make_msgid()
+        m.set_content("הודעה זו דורשת תצוגת HTML.")
+        m.add_alternative(html_body, subtype="html")
+        for filename, blob, subtype in (atts or []):
+            maintype = "application" if subtype in ("pdf", "octet-stream") else "image"
+            m.add_attachment(blob, maintype=maintype, subtype=subtype, filename=filename)
+        return m
+
+    msg = _build(html, attachments)
+    # OCI Email Delivery (and most relays) cap a message at ~2 MB. If the PDF pushes
+    # us over, send the mail without the attachment + a note, rather than fail (552).
+    if attachments and len(bytes(msg)) > 1_900_000:
+        note = ("<p style='background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;"
+                "border-radius:8px;padding:10px 12px;font-size:13px'>הקובץ המצורף (PDF) "
+                "הושמט בשל מגבלת גודל של שרת הדואר. ניתן לצפות/להוריד את הדוח המלא במערכת "
+                "או בקישור שבמייל.</p>")
+        msg = _build(note + html, None)
 
     if not config.mail_configured():
         return {"sent": False, "path": _spool_to_outbox(msg)}

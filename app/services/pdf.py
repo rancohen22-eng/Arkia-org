@@ -233,9 +233,9 @@ def _normalize_image(blob: bytes):
     im = ImageOps.exif_transpose(im)
     if im.mode not in ("RGB", "L"):
         im = im.convert("RGB")
-    im.thumbnail((1600, 1600))
+    im.thumbnail((1240, 1240))          # smaller → keeps the e-mailed PDF under the relay's ~2 MB cap
     out = io.BytesIO()
-    im.save(out, format="JPEG", quality=82)
+    im.save(out, format="JPEG", quality=72, optimize=True)
     out.seek(0)
     return out, im.width, im.height
 
