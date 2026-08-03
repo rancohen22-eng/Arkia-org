@@ -9,6 +9,6 @@ fpdf2==2.8.7
 python-bidi>=0.4.2
 Pillow>=10.0.0
 
-# optional — passkey / WebAuthn login. Install only if you enable passkeys
-# (set WEBAUTHN_RP_ID / WEBAUTHN_ORIGIN). The app runs fine without it.
-# webauthn>=2.0.0
+# passkey / WebAuthn login. Enabled with WEBAUTHN_RP_ID / WEBAUTHN_ORIGIN in .env;
+# the app still runs fine when those aren't set (the feature just stays hidden).
+webauthn>=2.0.0
