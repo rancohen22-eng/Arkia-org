@@ -7,7 +7,17 @@ back to manual entry, and outgoing mail is written to ``data/outbox/`` instead o
 being sent, so the whole flow is exercisable before any credentials exist.
 """
 import os
+import time
 from pathlib import Path
+
+# Israel-only app: default the process timezone to Asia/Jerusalem so all stored
+# timestamps (datetime('now','localtime')) are local, regardless of the server's
+# TZ (cloud VMs default to UTC). An explicit TZ in the environment still wins.
+os.environ.setdefault("TZ", "Asia/Jerusalem")
+try:
+    time.tzset()
+except Exception:
+    pass
 
 BASE = Path(__file__).resolve().parent
 ROOT = BASE.parent
