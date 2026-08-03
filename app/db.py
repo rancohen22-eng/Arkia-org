@@ -100,7 +100,8 @@ CREATE TABLE IF NOT EXISTS exp_reports (
     total REAL NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now','localtime')),
     submitted_at TEXT,
-    decided_at TEXT
+    decided_at TEXT,
+    viewed_at TEXT                                 -- first time the approver opened the request
 );
 
 -- one line per invoice; seq = the document number (1..N) used across the PDF
@@ -158,6 +159,9 @@ def _migrate(con: sqlite3.Connection) -> None:
         con.execute("ALTER TABLE exp_lines ADD COLUMN line_date TEXT NOT NULL DEFAULT ''")
     if "note" not in lcols:
         con.execute("ALTER TABLE exp_lines ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+    rcols = {r["name"] for r in con.execute("PRAGMA table_info(exp_reports)").fetchall()}
+    if "viewed_at" not in rcols:
+        con.execute("ALTER TABLE exp_reports ADD COLUMN viewed_at TEXT")
 
 
 def init_db(con: sqlite3.Connection) -> None:

@@ -107,6 +107,7 @@ function renderHead(){
     ${r.cancellable ? `<button class="secondary sm" style="margin-top:6px" onclick="convertType()">↔ המר ל${isReimb?'ריכוז אשראי':'החזר הוצאות'}</button>` : ''}
     ${r.status==='rejected' && r.decision_note ? `<div class="rejnote">הדוח נדחה: ${esc(r.decision_note)}</div>`:''}
     ${!r.editable ? `<p class="hint">הדוח אינו ניתן לעריכה בסטטוס זה. ניתן עדיין להוריד PDF ולשלוח במייל.</p>`:''}
+    ${r.viewed_at ? `<p class="hint" style="color:#166a3b;font-weight:700">👁️ המאשר צפה בבקשת האישור · ${esc((r.viewed_at||'').slice(0,16))}</p>`:''}
   `;
   if(r.editable){
     ['h-title','h-month','h-dept'].forEach(id=>{

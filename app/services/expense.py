@@ -252,6 +252,13 @@ def add_line(con, rid: int, supplier: str = "", amount: float = 0.0,
     return cur.lastrowid
 
 
+def mark_viewed(con, rid: int) -> None:
+    """Record the first time the approver opened the request (read-receipt)."""
+    con.execute("UPDATE exp_reports SET viewed_at=datetime('now','localtime') "
+                "WHERE id=? AND viewed_at IS NULL", (rid,))
+    con.commit()
+
+
 def convert_report_type(con, rid: int, rtype: str, approver_id) -> bool:
     """Switch a report between reimbursement/credit (to fix a wrong choice at creation).
     Resets it to an editable draft, fixes the default title prefix and the approver."""
@@ -393,7 +400,7 @@ def report_dict(con, r) -> dict:
         "status": r["status"], "decision_note": r["decision_note"],
         "total": float(r["total"] or 0), "sent_to": r["sent_to"], "sent_at": r["sent_at"],
         "created_at": r["created_at"], "submitted_at": r["submitted_at"],
-        "decided_at": r["decided_at"],
+        "decided_at": r["decided_at"], "viewed_at": r["viewed_at"],
         "editable": r["status"] in EDITABLE_STATUSES,
         # a report (and its lines) may be cancelled/deleted until the approver approves it
         "cancellable": r["status"] != "approved",

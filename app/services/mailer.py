@@ -187,7 +187,10 @@ def _esc(s) -> str:
              .replace(">", "&gt;").replace('"', "&quot;"))
 
 
-def approval_request_html(report: dict, lines: list[dict], approve_url: str) -> str:
+def approval_request_html(report: dict, lines: list[dict], approve_url: str,
+                          pixel_url: str = "") -> str:
+    pixel = (f'<img src="{pixel_url}" width="1" height="1" alt="" '
+             f'style="display:none">') if pixel_url else ""
     body = f"""
       <p style="font-size:15px">שלום {_esc(report.get('approver_name') or '')},</p>
       <p style="font-size:15px">הוגש לאישורך דוח <b>{_esc(report['title'])}</b>.</p>
@@ -205,6 +208,7 @@ def approval_request_html(report: dict, lines: list[dict], approve_url: str) -> 
       </div>
       <p style="font-size:12px;color:#94a3b8;margin-top:14px">
         אם הכפתור אינו עובד, העתק את הקישור לדפדפן:<br>{_esc(approve_url)}</p>
+      {pixel}
     """
     return _shell("בקשת אישור דוח החזרי הוצאות", body)
 

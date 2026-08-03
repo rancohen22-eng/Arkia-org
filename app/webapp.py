@@ -44,7 +44,7 @@ templates.env.globals["passkey_enabled"] = passkey.available
 # in a given app are simply never hit.
 PUBLIC_PREFIXES = ("/login", "/logout", "/static", "/health", "/favicon",
                    "/org/fill", "/org/api/public",
-                   "/exp/approve", "/exp/api/public",
+                   "/exp/approve", "/exp/api/public", "/exp/track",
                    "/auth/webauthn/login")   # passkey login is pre-auth; register isn't
 
 IDLE_SECONDS = int(os.environ.get("SESSION_IDLE_SECONDS", str(60 * 60)))
@@ -839,7 +839,8 @@ def _register_exp(app: FastAPI) -> None:
         rep, ldicts, _ = _load_report_for_pdf(con, report)
         pdf_bytes = _build_pdf(con, report)
         approve_url = f"{config.APP_BASE_URL}/exp/approve/{token}"
-        html = mailer.approval_request_html(rep, _mail_lines(ldicts), approve_url)
+        pixel_url = f"{config.APP_BASE_URL}/exp/track/{token}.gif"
+        html = mailer.approval_request_html(rep, _mail_lines(ldicts), approve_url, pixel_url)
         result = mailer.send_mail(rep["approver_email"], f"בקשת אישור · {rep['title']}",
                                   html, [(_pdf_name(rep), pdf_bytes, "pdf")])
         con.close()
@@ -924,6 +925,10 @@ def _register_exp(app: FastAPI) -> None:
         if report is None:
             con.close()
             return JSONResponse({"error": "קישור לא תקף"}, status_code=404)
+        # record the read-receipt: the approver actually opened the request page
+        # (this fetch runs from page JS, so link-preview crawlers don't trip it)
+        if report["status"] == "pending":
+            expense.mark_viewed(con, report["id"])
         rep = expense.report_dict(con, report)
         lines = [expense.line_dict(con, r) for r in expense.get_lines(con, report["id"])]
         con.close()
@@ -931,6 +936,21 @@ def _register_exp(app: FastAPI) -> None:
         safe = {k: rep[k] for k in ("title", "owner_name", "department", "month",
                                     "status", "total", "decision_note", "approver_name")}
         return {"report": safe, "lines": lines}
+
+    # 1x1 transparent GIF that records an e-mail open (best-effort; images are often
+    # blocked/proxied by mail clients — the reliable signal is the page-open above)
+    _PIXEL = (b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04'
+              b'\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x01D\x00;')
+
+    @app.get("/exp/track/{token}.gif")
+    def exp_track_pixel(token: str):
+        con = connect()
+        report = expense.get_report_by_token(con, token)
+        if report is not None and report["status"] == "pending":
+            expense.mark_viewed(con, report["id"])
+        con.close()
+        return Response(content=_PIXEL, media_type="image/gif",
+                        headers={"Cache-Control": "no-store, no-cache, must-revalidate, private"})
 
     @app.get("/exp/approve/{token}/pdf")
     def exp_approve_pdf(token: str, request: Request):
