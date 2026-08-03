@@ -50,6 +50,13 @@
       <button class="secondary" id="btnPdf" onclick="openPdf()">📄 הצג / הורד PDF</button>
       <button id="btnCancel" class="danger" onclick="deleteReport()" style="display:none">בטל דוח</button>
     </div>
+    <div id="shareRow" style="display:none;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)">
+      <p class="hint" style="margin:0 0 8px">שלח למנהל המאשר את קישור האישור (עוקף חסימת מייל):</p>
+      <div class="actions">
+        <button class="secondary" onclick="shareWhatsApp()">🟢 שתף בוואטסאפ</button>
+        <button class="secondary" onclick="copyApproveLink(this)">📋 העתק קישור</button>
+      </div>
+    </div>
     <div class="sendrow">
       <input id="sendEmail" type="email" placeholder="שליחה למייל נוסף (למשל הנהלת חשבונות)">
       <button class="secondary" onclick="sendToEmail()">שלח למייל</button>
@@ -240,8 +247,24 @@ function renderActions(){
     btn.textContent = r.type==='credit' ? 'הפק טופס' : 'הפק טופס ושלח לאישור';
   }
   document.getElementById('btnCancel').style.display = r.cancellable ? '' : 'none';
+  document.getElementById('shareRow').style.display = DATA.approve_url ? '' : 'none';
   document.getElementById('sentNote').textContent =
     r.sent_to ? ('נשלח לאחרונה אל ' + r.sent_to) : '';
+}
+
+function shareWhatsApp(){
+  if(!DATA.approve_url) return;
+  const r = DATA.report;
+  const msg = 'שלום, הוגש לאישורך דוח "' + r.title + '"'
+    + (r.owner_name ? ' מאת ' + r.owner_name : '') + '.\n'
+    + 'לצפייה ואישור: ' + DATA.approve_url;
+  window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+}
+async function copyApproveLink(btn){
+  if(!DATA.approve_url) return;
+  try{ await navigator.clipboard.writeText(DATA.approve_url); }
+  catch(e){ prompt('העתק את הקישור:', DATA.approve_url); return; }
+  const t = btn.textContent; btn.textContent = 'הועתק ✓'; setTimeout(()=>{btn.textContent=t;}, 1300);
 }
 
 async function deleteReport(){

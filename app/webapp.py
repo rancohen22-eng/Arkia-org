@@ -686,6 +686,11 @@ def _register_exp(app: FastAPI) -> None:
             "departments": [r["name"] for r in expense.list_departments(con, active_only=True)],
             "ocr_enabled": config.ocr_configured(),
         }
+        # the owner may share the approver's magic-link directly (e.g. via WhatsApp),
+        # useful when e-mail to the corporate domain is filtered
+        if report["type"] == expense.REIMBURSEMENT and report["approve_token"]:
+            base = config.APP_BASE_URL or str(request.base_url).rstrip("/")
+            data["approve_url"] = f"{base}/exp/approve/{report['approve_token']}"
         con.close()
         return data
 
