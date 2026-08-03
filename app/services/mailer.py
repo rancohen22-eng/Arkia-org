@@ -70,16 +70,36 @@ def _spool_to_outbox(msg: EmailMessage) -> str:
 
 # ==================== branded HTML templates ====================
 
+def _logo_url() -> str:
+    """Absolute URL of the Arkia logo, but only if the file is actually present
+    (and a public base URL is configured) — otherwise the header falls back to text."""
+    if config.APP_BASE_URL and (config.BASE / "static" / "img" / "arkia-logo.png").exists():
+        return f"{config.APP_BASE_URL}/static/img/arkia-logo.png"
+    return ""
+
+
 def _shell(title: str, body: str) -> str:
-    """Arkia look & feel: blue header band, white card, RTL."""
+    """Arkia look & feel: logo/blue header, white card. dir=rtl is set on the
+    content divs (Gmail strips it from <html>, which flips the Hebrew tables)."""
+    logo = _logo_url()
+    if logo:
+        header = (
+            f'<div style="background:#fff;text-align:center;padding:14px 22px;'
+            f'border-radius:14px 14px 0 0;border:1px solid #e2e8f0;border-bottom:0">'
+            f'<img src="{logo}" alt="arkia" style="height:34px"></div>'
+            f'<div style="background:{BLUE_D};color:#fff;padding:12px 22px;'
+            f'font-size:17px;font-weight:700">{title}</div>')
+    else:
+        header = (f'<div style="background:{BLUE_D};color:#fff;padding:16px 22px;'
+                  f'border-radius:14px 14px 0 0;font-size:18px;font-weight:700">'
+                  f'ארקיע · {title}</div>')
     return f"""\
 <!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="utf-8"></head>
 <body style="margin:0;background:#f1f5f9;font-family:Arial,'Segoe UI',sans-serif;color:#0f172a">
-  <div style="max-width:640px;margin:0 auto;padding:20px">
-    <div style="background:{BLUE_D};color:#fff;padding:16px 22px;border-radius:14px 14px 0 0;
-                font-size:18px;font-weight:700">ארקיע · {title}</div>
-    <div style="background:#fff;padding:22px;border-radius:0 0 14px 14px;
-                border:1px solid #e2e8f0;border-top:0">{body}</div>
+  <div dir="rtl" style="max-width:640px;margin:0 auto;padding:20px;text-align:right">
+    {header}
+    <div dir="rtl" style="background:#fff;padding:22px;border-radius:0 0 14px 14px;
+                border:1px solid #e2e8f0;border-top:0;text-align:right">{body}</div>
     <div style="color:#94a3b8;font-size:12px;text-align:center;padding:14px">
       הודעה זו נשלחה ממערכת החזרי ההוצאות של ארקיע.</div>
   </div>
@@ -97,21 +117,52 @@ def _fmt(n: float) -> str:
 
 
 def _lines_table(lines: list[dict]) -> str:
+    th = "padding:8px;border:1px solid #e2e8f0;font-size:13px;text-align:right"
     head = ("<tr style='background:#f8fafc'>"
-            "<th style='padding:8px;border:1px solid #e2e8f0;font-size:13px'>מס׳</th>"
-            "<th style='padding:8px;border:1px solid #e2e8f0;font-size:13px'>ספק</th>"
-            "<th style='padding:8px;border:1px solid #e2e8f0;font-size:13px'>סיווג</th>"
-            "<th style='padding:8px;border:1px solid #e2e8f0;font-size:13px'>סכום ₪</th></tr>")
+            f"<th style='{th};text-align:center'>מס׳</th>"
+            f"<th style='{th}'>ספק</th>"
+            f"<th style='{th}'>סיווג</th>"
+            f"<th style='{th};text-align:left'>סכום ₪</th></tr>")
     rows = ""
     for ln in lines:
+        note = _esc(ln.get("note") or "")
+        note_html = (f"<div style='color:#64748b;font-size:12px;margin-top:2px'>{note}</div>"
+                     if note else "")
         rows += (
             "<tr>"
             f"<td style='padding:8px;border:1px solid #e2e8f0;text-align:center'>{ln['seq']}</td>"
-            f"<td style='padding:8px;border:1px solid #e2e8f0'>{_esc(ln['supplier'])}</td>"
-            f"<td style='padding:8px;border:1px solid #e2e8f0'>{_esc(ln.get('category') or '')}</td>"
+            f"<td style='padding:8px;border:1px solid #e2e8f0;text-align:right'>{_esc(ln['supplier'])}{note_html}</td>"
+            f"<td style='padding:8px;border:1px solid #e2e8f0;text-align:right'>{_esc(ln.get('category') or '')}</td>"
             f"<td style='padding:8px;border:1px solid #e2e8f0;text-align:left'>{_fmt(ln['amount'])}</td>"
             "</tr>")
-    return (f"<table style='border-collapse:collapse;width:100%;margin:10px 0'>{head}{rows}</table>")
+    return (f"<table dir='rtl' style='border-collapse:collapse;width:100%;margin:10px 0'>"
+            f"{head}{rows}</table>")
+
+
+def _fmt_dt(s) -> str:
+    """'YYYY-MM-DD HH:MM:SS' → 'DD/MM/YYYY HH:MM' (best-effort)."""
+    s = (s or "").strip()
+    if not s:
+        return ""
+    try:
+        d, _, t = s.partition(" ")
+        y, m, dd = d.split("-")
+        hm = ":".join(t.split(":")[:2]) if t else ""
+        return f"{dd}/{m}/{y}" + (f" {hm}" if hm else "")
+    except Exception:
+        return s
+
+
+def _approval_note(report: dict) -> str:
+    """Green banner stating who approved the report and when (only once approved)."""
+    if report.get("status") != "approved":
+        return ""
+    who = _esc(report.get("approver_name") or "המנהל המאשר")
+    when = _fmt_dt(report.get("decided_at"))
+    when_txt = f" בתאריך {when}" if when else ""
+    return (f"<div dir='rtl' style='background:#e8f5ec;border:1px solid #b7e0c4;color:#166a3b;"
+            f"border-radius:10px;padding:12px 14px;margin:12px 0;font-size:14px;text-align:right'>"
+            f"✓ דוח הוצאות זה <b>אושר</b> על ידי <b>{who}</b>{when_txt}.</div>")
 
 
 def _esc(s) -> str:
@@ -158,6 +209,7 @@ def status_update_html(report: dict, note: str = "") -> str:
       <p style="font-size:15px">סטטוס הדוח <b>{_esc(report['title'])}</b> עודכן:</p>
       <p style="font-size:22px;font-weight:800;color:{color};margin:6px 0">
         {_esc(STATUS_HE.get(st, st))}</p>
+      {_approval_note(report)}
       <table style="font-size:14px;margin:6px 0">
         <tr><td style="padding:3px 10px 3px 0;color:#64748b">מחלקה</td><td>{_esc(report['department'])}</td></tr>
         <tr><td style="padding:3px 10px 3px 0;color:#64748b">חודש</td><td>{_esc(report['month'])}</td></tr>
@@ -174,6 +226,7 @@ def plain_report_html(report: dict, lines: list[dict], sender_name: str = "") ->
              + (f" מאת {_esc(sender_name)}" if sender_name else "") + ".</p>")
     body = f"""
       {intro}
+      {_approval_note(report)}
       <table style="font-size:14px;margin:6px 0">
         <tr><td style="padding:3px 10px 3px 0;color:#64748b">חודש</td><td>{_esc(report['month'])}</td></tr>
         <tr><td style="padding:3px 10px 3px 0;color:#64748b">סכום כולל</td>
