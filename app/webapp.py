@@ -873,9 +873,10 @@ def _register_exp(app: FastAPI) -> None:
         rep = expense.report_dict(con, report)
         data = _build_pdf(con, report)
         con.close()
-        # download (attachment), not inline — so the mobile PWA isn't trapped in the viewer
+        # ?view=1 → inline (for the in-app iframe viewer); default download (attachment)
+        inline = request.query_params.get("view") == "1"
         return Response(content=data, media_type="application/pdf",
-                        headers=_pdf_headers(rep, inline=False))
+                        headers=_pdf_headers(rep, inline=inline))
 
     @app.post("/exp/api/report/{rid}/delete")
     def exp_api_report_delete(rid: int, request: Request):
@@ -925,7 +926,7 @@ def _register_exp(app: FastAPI) -> None:
         return {"report": safe, "lines": lines}
 
     @app.get("/exp/approve/{token}/pdf")
-    def exp_approve_pdf(token: str):
+    def exp_approve_pdf(token: str, request: Request):
         con = connect()
         report = expense.get_report_by_token(con, token)
         if report is None:
@@ -934,9 +935,9 @@ def _register_exp(app: FastAPI) -> None:
         rep = expense.report_dict(con, report)
         data = _build_pdf(con, report)
         con.close()
-        # download (attachment), not inline — so the mobile PWA isn't trapped in the viewer
+        inline = request.query_params.get("view") == "1"
         return Response(content=data, media_type="application/pdf",
-                        headers=_pdf_headers(rep, inline=False))
+                        headers=_pdf_headers(rep, inline=inline))
 
     @app.post("/exp/api/public/approve/{token}")
     async def exp_api_public_approve_post(token: str, request: Request):

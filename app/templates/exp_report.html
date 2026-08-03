@@ -1,5 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+.pdfmodal{position:fixed;inset:0;z-index:9999;background:#0f172a;display:flex;flex-direction:column}
+.pdfmodal-bar{display:flex;align-items:center;gap:8px;padding:10px 12px;
+  background:var(--brand,#14367f);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.pdfmodal-bar .pdfmodal-title{flex:1;font-weight:700;font-size:15px}
+.pdfmodal-close{background:#fff;color:var(--brand,#14367f);border:0;border-radius:9px;
+  padding:9px 16px;font-weight:800;font-size:15px;cursor:pointer}
+.pdfmodal-link{color:#fff;text-decoration:none;font-weight:600;font-size:14px;
+  padding:8px 10px;border:1px solid rgba(255,255,255,.5);border-radius:9px}
+.pdfmodal iframe{flex:1;border:0;width:100%;background:#fff}
+.pdfmodal-fallback{position:absolute;left:0;right:0;bottom:0;text-align:center;
+  color:#cbd5e1;font-size:12px;padding:6px;pointer-events:none}
+</style>
 <div class="toolbar"><a class="linkbtn" href="/exp">→ חזרה לרשימת הדוחות</a></div>
 
 <div id="reportHead"></div>
@@ -18,11 +31,23 @@
     <div class="totalbar">סה"כ: <b id="grandTotal">₪ 0.00</b></div>
   </section>
 
+  <!-- in-app PDF viewer: our own close button, so the mobile PWA is never trapped -->
+  <div id="pdfModal" class="pdfmodal" style="display:none">
+    <div class="pdfmodal-bar">
+      <button class="pdfmodal-close" onclick="closePdf()">✕ סגור</button>
+      <span class="pdfmodal-title">תצוגת PDF</span>
+      <a class="pdfmodal-link" id="pdfDownload" href="#" download>⬇ הורד</a>
+      <a class="pdfmodal-link" id="pdfOpenNew" href="#" target="_blank" rel="noopener">↗ פתח</a>
+    </div>
+    <iframe id="pdfFrame" title="PDF" src="about:blank"></iframe>
+    <div class="pdfmodal-fallback">אם ה-PDF אינו מוצג כאן — הקש "הורד" או "פתח".</div>
+  </div>
+
   <section class="card" id="actionsCard">
     <h2>הפקה ושליחה</h2>
     <div class="actions">
       <button id="btnProduce" onclick="produce()"></button>
-      <a class="linkbtn" id="btnPdf" href="#" download>⬇ הורד PDF</a>
+      <button class="secondary" id="btnPdf" onclick="openPdf()">📄 הצג / הורד PDF</button>
       <button id="btnCancel" class="danger" onclick="deleteReport()" style="display:none">בטל דוח</button>
     </div>
     <div class="sendrow">
@@ -187,9 +212,27 @@ async function delLine(btn){
   renderLines();
 }
 
+function openPdf(){
+  const view = '/exp/report/'+RID+'/pdf?view=1';
+  document.getElementById('pdfFrame').src = view;
+  document.getElementById('pdfOpenNew').href = view;
+  document.getElementById('pdfDownload').href = '/exp/report/'+RID+'/pdf';
+  document.getElementById('pdfModal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function closePdf(){
+  document.getElementById('pdfModal').style.display = 'none';
+  document.getElementById('pdfFrame').src = 'about:blank';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closePdf(); });
+// <main> runs a transform animation → it would contain position:fixed and hide the
+// viewer's close button under the header. Lift the modal out to <body> so it truly
+// covers the screen (incl. the header) and the ✕ close button is always reachable.
+document.body.appendChild(document.getElementById('pdfModal'));
+
 function renderActions(){
   const r = DATA.report;
-  document.getElementById('btnPdf').href = '/exp/report/'+RID+'/pdf';
   const btn = document.getElementById('btnProduce');
   if(!r.editable){ btn.style.display='none'; }
   else{
