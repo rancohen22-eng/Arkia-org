@@ -41,8 +41,8 @@ async function load(){
       </table>
       <table class="grid"><thead><tr><th style="width:44px">מס׳</th><th style="width:110px">תאריך</th><th>ספק</th>
         <th>סיווג</th><th style="width:110px">סכום ₪</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="toolbar"><a class="linkbtn" href="/exp/approve/${encodeURIComponent(TOKEN)}/pdf" target="_blank">
-        ⬇ צפייה ב-PDF המלא (כולל מסמכים סרוקים)</a></div>
+      <div class="toolbar"><a class="linkbtn" href="/exp/approve/${encodeURIComponent(TOKEN)}/pdf" download>
+        ⬇ הורדת ה-PDF המלא (כולל מסמכים סרוקים)</a></div>
     </section>
     ${decided ? `<section class="card"><p>הדוח כבר טופל — סטטוס: <b>${s[0]}</b>.
         ${r.decision_note?('<br>הערה: '+esc(r.decision_note)):''}</p></section>`

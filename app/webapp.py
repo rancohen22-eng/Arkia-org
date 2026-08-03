@@ -873,7 +873,9 @@ def _register_exp(app: FastAPI) -> None:
         rep = expense.report_dict(con, report)
         data = _build_pdf(con, report)
         con.close()
-        return Response(content=data, media_type="application/pdf", headers=_pdf_headers(rep))
+        # download (attachment), not inline — so the mobile PWA isn't trapped in the viewer
+        return Response(content=data, media_type="application/pdf",
+                        headers=_pdf_headers(rep, inline=False))
 
     @app.post("/exp/api/report/{rid}/delete")
     def exp_api_report_delete(rid: int, request: Request):
@@ -932,7 +934,9 @@ def _register_exp(app: FastAPI) -> None:
         rep = expense.report_dict(con, report)
         data = _build_pdf(con, report)
         con.close()
-        return Response(content=data, media_type="application/pdf", headers=_pdf_headers(rep))
+        # download (attachment), not inline — so the mobile PWA isn't trapped in the viewer
+        return Response(content=data, media_type="application/pdf",
+                        headers=_pdf_headers(rep, inline=False))
 
     @app.post("/exp/api/public/approve/{token}")
     async def exp_api_public_approve_post(token: str, request: Request):
