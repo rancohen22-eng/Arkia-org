@@ -1114,4 +1114,12 @@ def create_app(*, include_org: bool = True, include_exp: bool = True,
         _register_org(app)
     if include_exp:
         _register_exp(app)
+
+    # bare domain "/" → the service's home, so the root URL isn't a JSON 404
+    # (only when home isn't already "/", which the org chart serves directly)
+    if home_path != "/":
+        @app.get("/", include_in_schema=False)
+        def _root_redirect():
+            return RedirectResponse(home_path, status_code=307)
+
     return app
