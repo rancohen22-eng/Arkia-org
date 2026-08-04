@@ -113,12 +113,22 @@ def build_report_pdf(report: dict, lines: list[dict],
     pdf.add_page()
     W = pdf.w - pdf.l_margin - pdf.r_margin
 
-    # ---- title band ----
+    # ---- logo (if bundled) then the blue title band ----
+    logo = config.BASE / "static" / "img" / "arkia-logo.png"
+    if logo.exists():
+        try:
+            pdf.image(str(logo), x=pdf.l_margin, y=pdf.get_y(), h=12)   # transparent PNG on white
+            pdf.ln(16)
+            band_text = report["title"]
+        except Exception:
+            band_text = "ארקיע · " + report["title"]
+    else:
+        band_text = "ארקיע · " + report["title"]
     pdf.set_fill_color(*BLUE_D)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Dejavu", "B", 15)
     pdf.set_x(pdf.l_margin)
-    pdf.cell(W, 12, _rtl("ארקיע · " + report["title"]), border=0, align="R", fill=True)
+    pdf.cell(W, 12, _rtl(band_text), border=0, align="R", fill=True)
     pdf.ln(15)
 
     # ---- meta block (right-aligned label/value pairs) ----
