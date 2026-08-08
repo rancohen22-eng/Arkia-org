@@ -111,6 +111,23 @@ def _load_report_for_pdf(con, report) -> tuple[dict, list[dict], list]:
     return rep, lines, expense.category_totals(con, report["id"])
 
 
+def _payment_recipients(con, rep: dict, prof) -> list:
+    """Who gets the 'ready for payment' e-mail: the employee, the approver, and
+    every active accounting-dept address — de-duplicated, empties dropped."""
+    raw = []
+    if prof and prof["email"]:
+        raw.append(prof["email"])
+    if rep.get("approver_email"):
+        raw.append(rep["approver_email"])
+    raw += [a["email"] for a in expense.list_accounting(con, active_only=True)]
+    seen, out = set(), []
+    for e in raw:
+        e = (e or "").strip()
+        if e and e.lower() not in seen:
+            seen.add(e.lower()); out.append(e)
+    return out
+
+
 def _build_pdf(con, report) -> bytes:
     rep, lines, cats = _load_report_for_pdf(con, report)
     return pdf.build_report_pdf(rep, lines, cats)
@@ -517,6 +534,50 @@ def _register_exp(app: FastAPI) -> None:
         con.close()
         return {"ok": True}
 
+    # ---- accounting dept (CC'd on the payment e-mail) ----
+
+    @app.post("/exp/api/settings/accounting")
+    async def exp_api_accounting_add(request: Request):
+        if (err := _forbidden_admin(request)):
+            return err
+        body = await request.json()
+        name = (body.get("name") or "").strip()
+        email = (body.get("email") or "").strip()
+        if not name or not email:
+            return JSONResponse({"error": "חסר שם או מייל"}, status_code=400)
+        con = connect()
+        aid = expense.add_accounting(con, name, email)
+        audit(con, get_user(request), "exp_accounting", str(aid), "add", None, email)
+        con.commit()
+        con.close()
+        return {"id": aid}
+
+    @app.post("/exp/api/settings/accounting/{aid}")
+    async def exp_api_accounting_update(aid: int, request: Request):
+        if (err := _forbidden_admin(request)):
+            return err
+        body = await request.json()
+        name = (body.get("name") or "").strip()
+        email = (body.get("email") or "").strip()
+        if not name or not email:
+            return JSONResponse({"error": "חסר שם או מייל"}, status_code=400)
+        con = connect()
+        ok = expense.update_accounting(con, aid, name, email,
+                                       bool(body.get("is_active", True)))
+        con.close()
+        if not ok:
+            return JSONResponse({"error": "לא נמצא"}, status_code=404)
+        return {"ok": True}
+
+    @app.post("/exp/api/settings/accounting/{aid}/delete")
+    def exp_api_accounting_delete(aid: int, request: Request):
+        if (err := _forbidden_admin(request)):
+            return err
+        con = connect()
+        expense.delete_accounting(con, aid)
+        con.close()
+        return {"ok": True}
+
     # ---- departments ----
 
     @app.post("/exp/api/settings/department")
@@ -824,10 +885,21 @@ def _register_exp(app: FastAPI) -> None:
             return JSONResponse({"error": "אין חשבוניות בדוח"}, status_code=400)
 
         if report["type"] == expense.CREDIT:
-            # credit summary: compile & mark, no approver e-mail
+            # credit summary: compile, then send the 'ready for payment' e-mail to
+            # the employee + accounting (credit reports have no approver)
             expense.set_status(con, rid, "compiled")
+            report = expense.get_report(con, rid)
+            rep, ldicts, _ = _load_report_for_pdf(con, report)
+            pdf_bytes = _build_pdf(con, report)
+            prof = expense.get_profile(con, report["owner"])
+            recips = _payment_recipients(con, rep, prof)
             con.close()
-            return {"ok": True, "status": "compiled"}
+            mail_sent = False
+            if recips:
+                html = mailer.payment_html(rep, _mail_lines(ldicts))
+                mail_sent = mailer.send_mail(recips, f"לתשלום · {rep['title']}", html,
+                                             [(_pdf_name(rep), pdf_bytes, "pdf")])["sent"]
+            return {"ok": True, "status": "compiled", "mail_sent": mail_sent}
 
         # reimbursement: needs an approver, then send the request e-mail
         if report["approver_id"] is None:
@@ -984,13 +1056,24 @@ def _register_exp(app: FastAPI) -> None:
         new_status = "approved" if decision == "approve" else "rejected"
         expense.set_status(con, report["id"], new_status, note=note)
         report = expense.get_report(con, report["id"])
-        rep = expense.report_dict(con, report)
         prof = expense.get_profile(con, report["owner"])
-        con.close()
-        # notify the employee of the new status (if we have their e-mail on file)
-        if prof and prof["email"]:
-            html = mailer.status_update_html(rep, note=note)
-            mailer.send_mail(prof["email"], f"עדכון סטטוס · {rep['title']}", html)
+        if decision == "approve":
+            # approved → the 'ready for payment' e-mail to employee + approver + accounting
+            rep, ldicts, _ = _load_report_for_pdf(con, report)
+            pdf_bytes = _build_pdf(con, report)
+            recips = _payment_recipients(con, rep, prof)
+            con.close()
+            if recips:
+                html = mailer.payment_html(rep, _mail_lines(ldicts))
+                mailer.send_mail(recips, f"לתשלום · {rep['title']}", html,
+                                 [(_pdf_name(rep), pdf_bytes, "pdf")])
+        else:
+            rep = expense.report_dict(con, report)
+            con.close()
+            # rejected → notify only the employee
+            if prof and prof["email"]:
+                html = mailer.status_update_html(rep, note=note)
+                mailer.send_mail(prof["email"], f"עדכון סטטוס · {rep['title']}", html)
         return {"ok": True, "status": new_status}
 
     # ==================== passkeys / WebAuthn (optional login) ====================

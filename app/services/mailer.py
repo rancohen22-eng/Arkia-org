@@ -256,3 +256,26 @@ def plain_report_html(report: dict, lines: list[dict], sender_name: str = "") ->
       <p style="font-size:14px;color:#475569">ריכוז החשבוניות המלא והמסמכים הסרוקים מצורפים כ-PDF.</p>
     """
     return _shell(_esc(report['title']), body)
+
+
+def payment_html(report: dict, lines: list[dict]) -> str:
+    """Sent once a report is approved (reimbursement) or compiled (credit) — to the
+    employee, the approver and accounting — as the trigger to process the payment."""
+    is_credit = report.get("type") == "credit"
+    kind = "ריכוז אשראי" if is_credit else "החזר הוצאות"
+    action = "רוכז ונסגר לחודש" if is_credit else "אושר"
+    body = f"""
+      <p style="font-size:15px">דוח <b>{kind}</b> — <b>{_esc(report['title'])}</b> של
+        <b>{_esc(report['owner_name'])}</b> {action}, ומועבר <b>לטיפול בתשלום</b>.</p>
+      {_approval_note(report)}
+      <table style="font-size:14px;margin:6px 0">
+        <tr><td style="padding:3px 10px 3px 0;color:#64748b">עובד</td><td><b>{_esc(report['owner_name'])}</b></td></tr>
+        <tr><td style="padding:3px 10px 3px 0;color:#64748b">מחלקה</td><td>{_esc(report['department'])}</td></tr>
+        <tr><td style="padding:3px 10px 3px 0;color:#64748b">חודש</td><td>{_esc(report['month'])}</td></tr>
+        <tr><td style="padding:3px 10px 3px 0;color:#64748b">סכום לתשלום</td>
+            <td style="font-size:18px;font-weight:800;color:{BLUE_D}">₪ {_fmt(report['total'])}</td></tr>
+      </table>
+      {_lines_table(lines)}
+      <p style="font-size:14px;color:#475569">הדוח המלא והמסמכים הסרוקים מצורפים כקובץ PDF.</p>
+    """
+    return _shell("לתשלום · " + kind, body)

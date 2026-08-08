@@ -124,6 +124,34 @@ def delete_approver(con, aid: int) -> None:
     con.commit()
 
 
+def list_accounting(con, active_only: bool = False):
+    q = "SELECT * FROM exp_accounting"
+    if active_only:
+        q += " WHERE is_active=1"
+    q += " ORDER BY name, id"
+    return con.execute(q).fetchall()
+
+
+def add_accounting(con, name: str, email: str) -> int:
+    cur = con.execute("INSERT INTO exp_accounting (name, email) VALUES (?, ?)",
+                      (name.strip(), email.strip()))
+    con.commit()
+    return cur.lastrowid
+
+
+def update_accounting(con, aid: int, name: str, email: str, is_active: bool) -> bool:
+    cur = con.execute(
+        "UPDATE exp_accounting SET name=?, email=?, is_active=? WHERE id=?",
+        (name.strip(), email.strip(), 1 if is_active else 0, aid))
+    con.commit()
+    return cur.rowcount > 0
+
+
+def delete_accounting(con, aid: int) -> None:
+    con.execute("DELETE FROM exp_accounting WHERE id=?", (aid,))
+    con.commit()
+
+
 def list_departments(con, active_only: bool = False):
     q = "SELECT * FROM exp_departments"
     if active_only:
@@ -164,6 +192,8 @@ def settings_snapshot(con) -> dict:
                        for r in list_categories(con)],
         "approvers": [_dict(r, "id", "name", "email", "is_active")
                       for r in list_approvers(con)],
+        "accounting": [_dict(r, "id", "name", "email", "is_active")
+                       for r in list_accounting(con)],
         "departments": [_dict(r, "id", "name", "is_active")
                         for r in list_departments(con)],
         "profiles": [_dict(r, "username", "display_name", "email", "department",

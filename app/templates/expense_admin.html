@@ -39,6 +39,20 @@
     </div>
   </section>
 
+  <!-- accounting dept -->
+  <section class="card" id="card-accounting">
+    <h2>הנהלת חשבונות</h2>
+    <p class="hint">משתמשי מחלקת הנהלת החשבונות. לאחר אישור דוח החזר הוצאות או סגירת דוח אשראי לחודש — נשלח מייל "לתשלום" שאליו מכותבים העובד, המאשר, וכל הכתובות שכאן.</p>
+    <table class="grid"><thead><tr>
+      <th>שם</th><th>מייל</th><th style="width:70px">פעיל</th><th style="width:140px"></th>
+    </tr></thead><tbody id="tb-accounting"></tbody></table>
+    <div class="addrow">
+      <input id="new-acc-name" placeholder="שם">
+      <input id="new-acc-email" placeholder="כתובת מייל" type="email">
+      <button onclick="addAccounting()">הוסף</button>
+    </div>
+  </section>
+
   <!-- departments -->
   <section class="card" id="card-departments">
     <h2>מחלקות</h2>
@@ -87,6 +101,7 @@ async function load(){
   APPROVERS = (d.approvers||[]).filter(x=>x.is_active);
   renderCategories(d.categories);
   renderApprovers(d.approvers);
+  renderAccounting(d.accounting);
   renderDepartments(d.departments);
   renderProfiles(d.profiles);
   document.getElementById('new-prof-appr').innerHTML = apprOptions(null);
@@ -161,6 +176,39 @@ async function saveApprover(btn){
 async function delApprover(btn){
   if(!confirm('למחוק את המאשר?')) return;
   await apiPost('/exp/api/settings/approver/'+btn.closest('tr').dataset.id+'/delete',{}); load();
+}
+
+// ---------- accounting dept ----------
+function renderAccounting(rows){
+  document.getElementById('tb-accounting').innerHTML = (rows||[]).map(r=>`
+    <tr data-id="${r.id}">
+      <td><input class="f-name" value="${esc(r.name)}"></td>
+      <td><input class="f-email" value="${esc(r.email)}" type="email"></td>
+      <td class="c">${chk(r.is_active)}</td>
+      <td class="c">
+        <button class="secondary sm" onclick="saveAccounting(this)">שמור</button>
+        <button class="danger sm" onclick="delAccounting(this)">מחק</button>
+      </td>
+    </tr>`).join('') || emptyRow(4);
+}
+async function addAccounting(){
+  const name=val('new-acc-name'), email=val('new-acc-email');
+  if(!name||!email){ alert('שם ומייל נדרשים'); return; }
+  await apiPost('/exp/api/settings/accounting', {name, email});
+  document.getElementById('new-acc-name').value='';
+  document.getElementById('new-acc-email').value=''; load();
+}
+async function saveAccounting(btn){
+  const tr=btn.closest('tr');
+  await apiPost('/exp/api/settings/accounting/'+tr.dataset.id, {
+    name: tr.querySelector('.f-name').value,
+    email: tr.querySelector('.f-email').value,
+    is_active: tr.querySelector('input[type=checkbox]').checked });
+  flash(btn);
+}
+async function delAccounting(btn){
+  if(!confirm('למחוק?')) return;
+  await apiPost('/exp/api/settings/accounting/'+btn.closest('tr').dataset.id+'/delete',{}); load();
 }
 
 // ---------- departments ----------

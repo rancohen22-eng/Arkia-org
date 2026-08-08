@@ -75,6 +75,12 @@ CREATE TABLE IF NOT EXISTS exp_approvers (
     email TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS exp_accounting (      -- accounting dept — CC'd on the payment e-mail
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1
+);
 
 -- department list (for dropdowns); a user's own department lives on exp_profiles
 CREATE TABLE IF NOT EXISTS exp_departments (
