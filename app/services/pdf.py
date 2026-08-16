@@ -198,17 +198,25 @@ def build_report_pdf(report: dict, lines: list[dict],
         for name, amt in category_totals:
             _rtl_row(pdf, [name or "—", _money(amt)], cw, ["R", "L"])
 
-    # ---- one page per invoice image ----
+    # ---- one page per document (a line may carry several) ----
     for ln in lines:
-        pdf.add_page()
-        pdf.set_fill_color(*BLUE)
-        pdf.set_text_color(255, 255, 255)
-        pdf.set_font("Dejavu", "B", 12)
-        pdf.set_x(pdf.l_margin)
-        head = f"מסמך מס׳ {ln['seq']}  ·  {ln.get('supplier','')}  ·  ₪ {_money(ln.get('amount'))}"
-        pdf.cell(W, 10, _rtl(pdf._fit(head, W - 4, 12)), border=0, align="R", fill=True)
-        pdf.ln(14)
-        _place_image(pdf, ln.get("invoice_bytes"))
+        blobs = ln.get("invoice_bytes_list")
+        if blobs is None:
+            blobs = [ln["invoice_bytes"]] if ln.get("invoice_bytes") else []
+        if not blobs:
+            blobs = [None]                      # still emit a "no document" page
+        n = len(blobs)
+        for i, blob in enumerate(blobs, start=1):
+            pdf.add_page()
+            pdf.set_fill_color(*BLUE)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Dejavu", "B", 12)
+            pdf.set_x(pdf.l_margin)
+            seq = f"{ln['seq']}" + (f" ({i}/{n})" if n > 1 else "")
+            head = f"מסמך מס׳ {seq}  ·  {ln.get('supplier','')}  ·  ₪ {_money(ln.get('amount'))}"
+            pdf.cell(W, 10, _rtl(pdf._fit(head, W - 4, 12)), border=0, align="R", fill=True)
+            pdf.ln(14)
+            _place_image(pdf, blob)
 
     return bytes(pdf.output())
 

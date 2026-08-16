@@ -120,8 +120,14 @@ CREATE TABLE IF NOT EXISTS exp_lines (
     line_date TEXT NOT NULL DEFAULT '',           -- the expense date on the invoice (YYYY-MM-DD)
     note TEXT NOT NULL DEFAULT '',                 -- free-text note shown next to the line and in the PDF
     category_id INTEGER REFERENCES exp_categories(id),
-    invoice_path TEXT,                            -- data/uploads/... (never in the repo)
+    invoice_path TEXT,                            -- primary document (data/uploads/...; never in repo)
     ocr_raw TEXT,                                 -- raw OCR text, for debugging/audit
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS exp_line_files (       -- additional documents attached to one line
+    id INTEGER PRIMARY KEY,
+    line_id INTEGER NOT NULL REFERENCES exp_lines(id),
+    path TEXT NOT NULL,
     created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_exp_lines_report ON exp_lines(report_id);

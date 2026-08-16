@@ -134,10 +134,10 @@ async function convertType(){
 function renderAdd(){
   if(!DATA.report.editable){ document.getElementById('addArea').innerHTML=''; return; }
   document.getElementById('addArea').innerHTML = `
-    <label class="camera">📷 צלם/העלה חשבונית
-      <input type="file" accept="image/*,application/pdf" capture="environment" style="display:none" onchange="uploadInvoice(this)">
+    <label class="camera">📷 צלם או העלה חשבונית
+      <input type="file" accept="image/*,application/pdf" style="display:none" onchange="uploadInvoice(this)">
     </label>
-    <span class="hint" style="margin:0">חובה לצרף מסמך לכל הוצאה</span>`;
+    <span class="hint" style="margin:0">חובה לצרף מסמך לכל הוצאה · ניתן לצרף כמה מסמכים לכל הוצאה (➕ בעמודת "מסמך")</span>`;
 }
 
 async function uploadInvoice(input){
@@ -168,7 +168,7 @@ function renderLines(){
   body.innerHTML = DATA.lines.map(l=>`
     <tr data-id="${l.id}">
       <td class="c" data-label="מס׳">${l.seq}</td>
-      <td class="c" data-label="מסמך">${l.has_image?`<a href="/exp/report/${RID}/line/${l.id}/image" target="_blank">📄 צפייה</a>`:'—'}</td>
+      <td class="c" data-label="מסמך">${docCell(l)}</td>
       <td data-label="תאריך"><input class="f-date" type="date" value="${esc(l.date||'')}" ${editable?'':'disabled'}></td>
       <td data-label="ספק"><input class="f-sup" placeholder="שם הספק" value="${esc(l.supplier)}" ${editable?'':'disabled'}></td>
       <td data-label="סכום ₪"><input class="f-amt" type="number" step="0.01" value="${l.amount}" ${editable?'':'disabled'}></td>
@@ -217,6 +217,49 @@ async function delLine(btn){
   const tr = btn.closest('tr');
   const res = await apiPost('/exp/api/report/'+RID+'/line/'+tr.dataset.id+'/delete',{});
   DATA = await fetch('/exp/api/report/'+RID).then(r=>r.json());
+  renderLines();
+}
+
+// the "מסמך" cell: the primary invoice, every extra document, and (when editable)
+// controls to view/remove each and to attach another document to the line.
+function docCell(l){
+  const editable = DATA.report.editable;
+  const bits = [];
+  if(l.has_image)
+    bits.push(`<a href="/exp/report/${RID}/line/${l.id}/image" target="_blank" title="מסמך 1">📄</a>`);
+  (l.extra_files||[]).forEach((f,i)=>{
+    bits.push(`<a href="/exp/report/${RID}/line/${l.id}/file/${f.id}" target="_blank" title="מסמך ${i+2}">📄</a>`
+      + (editable?`<a href="#" onclick="delLineFile(event,${l.id},${f.id})" title="הסר מסמך" style="color:#dc2626;text-decoration:none;font-size:11px">✕</a>`:''));
+  });
+  if(!bits.length) bits.push('—');
+  if(editable)
+    bits.push(`<a href="#" onclick="addLineDoc(event,${l.id})" title="הוסף מסמך" style="text-decoration:none">➕</a>`);
+  return bits.join(' ');
+}
+function addLineDoc(ev, lid){
+  ev.preventDefault();
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*,application/pdf';
+  inp.onchange=async ()=>{
+    if(!inp.files[0]) return;
+    syncAllRows();
+    const fd=new FormData(); fd.append('file', inp.files[0]);
+    const res=await fetch('/exp/api/report/'+RID+'/line/'+lid+'/file',{method:'POST',body:fd}).then(r=>r.json());
+    if(res && res.error){ alert(res.error); return; }
+    const l=DATA.lines.find(x=>x.id===lid);
+    if(l && res.line) l.extra_files=res.line.extra_files;
+    renderLines();
+  };
+  inp.click();
+}
+async function delLineFile(ev, lid, fid){
+  ev.preventDefault();
+  if(!confirm('למחוק את המסמך?')) return;
+  syncAllRows();
+  const res=await apiPost('/exp/api/report/'+RID+'/line/'+lid+'/file/'+fid+'/delete',{});
+  if(res && res.error){ alert(res.error); return; }
+  const l=DATA.lines.find(x=>x.id===lid);
+  if(l) l.extra_files=(l.extra_files||[]).filter(f=>f.id!==fid);
   renderLines();
 }
 

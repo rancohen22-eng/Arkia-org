@@ -325,18 +325,19 @@ def update_line(con, rid: int, lid: int, supplier: str, amount: float,
     return True
 
 
-def delete_line(con, rid: int, lid: int) -> str | None:
-    """Delete a line; returns its invoice_path (so the caller can remove the file)."""
+def delete_line(con, rid: int, lid: int) -> list:
+    """Delete a line; returns all its document paths (so the caller can remove files)."""
     line = con.execute("SELECT * FROM exp_lines WHERE id=? AND report_id=?",
                        (lid, rid)).fetchone()
     if line is None:
-        return None
-    path = line["invoice_path"]
+        return []
+    paths = line_all_file_paths(con, lid, line["invoice_path"])
+    con.execute("DELETE FROM exp_line_files WHERE line_id=?", (lid,))
     con.execute("DELETE FROM exp_lines WHERE id=?", (lid,))
     _resequence(con, rid)
     _recompute_total(con, rid)
     con.commit()
-    return path
+    return paths
 
 
 def set_line_image(con, rid: int, lid: int, path: str) -> None:
@@ -349,6 +350,43 @@ def line_image_path(con, rid: int, lid: int) -> str | None:
     row = con.execute("SELECT invoice_path FROM exp_lines WHERE id=? AND report_id=?",
                       (lid, rid)).fetchone()
     return row["invoice_path"] if row else None
+
+
+# ---- additional documents per line (beyond the primary invoice_path) ----
+
+def add_line_file(con, lid: int, path: str) -> int:
+    cur = con.execute("INSERT INTO exp_line_files (line_id, path) VALUES (?, ?)",
+                      (lid, path))
+    con.commit()
+    return cur.lastrowid
+
+
+def list_line_files(con, lid: int):
+    return con.execute("SELECT * FROM exp_line_files WHERE line_id=? ORDER BY id",
+                       (lid,)).fetchall()
+
+
+def line_file_path(con, lid: int, fid: int) -> str | None:
+    row = con.execute("SELECT path FROM exp_line_files WHERE id=? AND line_id=?",
+                      (fid, lid)).fetchone()
+    return row["path"] if row else None
+
+
+def delete_line_file(con, lid: int, fid: int) -> str | None:
+    row = con.execute("SELECT path FROM exp_line_files WHERE id=? AND line_id=?",
+                      (fid, lid)).fetchone()
+    if row is None:
+        return None
+    con.execute("DELETE FROM exp_line_files WHERE id=?", (fid,))
+    con.commit()
+    return row["path"]
+
+
+def line_all_file_paths(con, lid: int, invoice_path: str | None) -> list:
+    """Every document for a line: the primary invoice first, then the extras."""
+    paths = [invoice_path] if invoice_path else []
+    paths += [r["path"] for r in list_line_files(con, lid)]
+    return paths
 
 
 def _resequence(con, rid: int) -> None:
@@ -409,10 +447,12 @@ def line_dict(con, r) -> dict:
         row = con.execute("SELECT name FROM exp_categories WHERE id=?",
                           (r["category_id"],)).fetchone()
         cat = row["name"] if row else None
+    extras = [{"id": f["id"]} for f in list_line_files(con, r["id"])]
     return {"id": r["id"], "seq": r["seq"], "supplier": r["supplier"],
             "amount": r["amount"], "date": r["line_date"], "note": r["note"],
             "category_id": r["category_id"],
-            "category": cat, "has_image": bool(r["invoice_path"])}
+            "category": cat, "has_image": bool(r["invoice_path"]),
+            "extra_files": extras}
 
 
 def report_dict(con, r) -> dict:

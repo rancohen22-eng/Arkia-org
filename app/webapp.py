@@ -101,12 +101,13 @@ def _load_report_for_pdf(con, report) -> tuple[dict, list[dict], list]:
     lines = []
     for r in expense.get_lines(con, report["id"]):
         d = expense.line_dict(con, r)
-        blob = None
-        if r["invoice_path"]:
-            p = Path(r["invoice_path"])
+        blobs = []
+        for pth in expense.line_all_file_paths(con, r["id"], r["invoice_path"]):
+            p = Path(pth)
             if p.exists():
-                blob = p.read_bytes()
-        d["invoice_bytes"] = blob
+                blobs.append(p.read_bytes())
+        d["invoice_bytes"] = blobs[0] if blobs else None   # legacy single field
+        d["invoice_bytes_list"] = blobs
         lines.append(d)
     return rep, lines, expense.category_totals(con, report["id"])
 
@@ -845,10 +846,10 @@ def _register_exp(app: FastAPI) -> None:
         if report["status"] == "approved" and not auth.is_admin(get_user(request)):
             con.close()
             return JSONResponse({"error": "לא ניתן לבטל שורה בדוח שכבר אושר"}, status_code=409)
-        path = expense.delete_line(con, rid, lid)
+        paths = expense.delete_line(con, rid, lid)
         total = expense.report_dict(con, expense.get_report(con, rid))["total"]
         con.close()
-        if path:
+        for path in paths:
             try:
                 Path(path).unlink(missing_ok=True)
             except OSError:
@@ -868,6 +869,70 @@ def _register_exp(app: FastAPI) -> None:
             return JSONResponse({"error": "לא נמצא"}, status_code=404)
         data = Path(path).read_bytes()
         return Response(content=data, media_type=_media_for(path))
+
+    @app.post("/exp/api/report/{rid}/line/{lid}/file")
+    async def exp_api_line_file_add(rid: int, lid: int, request: Request,
+                                    file: UploadFile | None = File(default=None)):
+        con = connect()
+        report = expense.get_report(con, rid)
+        if not _owns(request, report):
+            con.close()
+            return JSONResponse({"error": "אין הרשאה"}, status_code=403)
+        if report["status"] not in expense.EDITABLE_STATUSES:
+            con.close()
+            return JSONResponse({"error": "לא ניתן להוסיף מסמך בסטטוס זה"}, status_code=409)
+        if con.execute("SELECT 1 FROM exp_lines WHERE id=? AND report_id=?",
+                       (lid, rid)).fetchone() is None:
+            con.close()
+            return JSONResponse({"error": "שורה לא נמצאה"}, status_code=404)
+        blob = await file.read() if file is not None else b""
+        if not blob:
+            con.close()
+            return JSONResponse({"error": "לא צורף קובץ"}, status_code=400)
+        folder = config.UPLOADS / str(rid)
+        folder.mkdir(parents=True, exist_ok=True)
+        ext = _img_ext(file.content_type, file.filename)
+        fid = expense.add_line_file(con, lid, "")          # get an id for a unique filename
+        path = folder / f"{lid}-{fid}{ext}"
+        path.write_bytes(blob)
+        con.execute("UPDATE exp_line_files SET path=? WHERE id=?", (str(path), fid))
+        con.commit()
+        row = con.execute("SELECT * FROM exp_lines WHERE id=?", (lid,)).fetchone()
+        line = expense.line_dict(con, row)
+        con.close()
+        return {"ok": True, "line": line}
+
+    @app.get("/exp/report/{rid}/line/{lid}/file/{fid}")
+    def exp_line_file(rid: int, lid: int, fid: int, request: Request):
+        con = connect()
+        report = expense.get_report(con, rid)
+        if not _owns(request, report):
+            con.close()
+            return JSONResponse({"error": "אין הרשאה"}, status_code=403)
+        path = expense.line_file_path(con, lid, fid)
+        con.close()
+        if not path or not Path(path).exists():
+            return JSONResponse({"error": "לא נמצא"}, status_code=404)
+        return Response(content=Path(path).read_bytes(), media_type=_media_for(path))
+
+    @app.post("/exp/api/report/{rid}/line/{lid}/file/{fid}/delete")
+    def exp_api_line_file_delete(rid: int, lid: int, fid: int, request: Request):
+        con = connect()
+        report = expense.get_report(con, rid)
+        if not _owns(request, report):
+            con.close()
+            return JSONResponse({"error": "אין הרשאה"}, status_code=403)
+        if report["status"] not in expense.EDITABLE_STATUSES:
+            con.close()
+            return JSONResponse({"error": "לא ניתן למחוק מסמך בסטטוס זה"}, status_code=409)
+        path = expense.delete_line_file(con, lid, fid)
+        con.close()
+        if path:
+            try:
+                Path(path).unlink(missing_ok=True)
+            except OSError:
+                pass
+        return {"ok": True}
 
     @app.post("/exp/api/report/{rid}/submit")
     def exp_api_report_submit(rid: int, request: Request):
