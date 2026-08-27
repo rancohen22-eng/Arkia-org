@@ -79,7 +79,8 @@ class _PDF(FPDF):
         return (s + "…") if s else ""
 
 
-_SUMMARY_SRC = "ECB"                 # FX provider label shown in the conversion note
+# FX provider label (stored code → Hebrew) shown in the conversion note
+_FX_SRC_HE = {"BOI": "שער יציג, בנק ישראל", "ECB": "ECB"}
 
 
 def _money(n: float) -> str:
@@ -238,9 +239,10 @@ def build_report_pdf(report: dict, lines: list[dict],
             pdf.ln(2)
             pdf.set_font("Dejavu", "", 8.5)
             pdf.set_text_color(*MUTED)
-            for cur, as_of, rate in conv.get("rates", []):
+            for cur, as_of, rate, src in conv.get("rates", []):
                 sym = config.currency_symbol(cur)
-                line = f"המרה: 1 {sym} = {rate:.4f} ₪  ·  שער {cur}/ILS ({_SUMMARY_SRC}) ליום {_fmt_date(as_of)}"
+                src_he = _FX_SRC_HE.get(src, src or "")
+                line = f"המרה: 1 {sym} = {rate:.4f} ₪  ·  {src_he}, {cur}/ILS ליום {_fmt_date(as_of)}"
                 pdf.set_x(pdf.l_margin)
                 pdf.cell(W, 5, _rtl(pdf._fit(line, W - 2, 8.5)), align="R")
                 pdf.ln(5)
