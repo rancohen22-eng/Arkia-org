@@ -30,7 +30,7 @@ from .db import connect, init_db
 from .services import org
 from .services import expense
 from .services import ocr as ocr_service
-from .services import mailer, pdf
+from .services import mailer, pdf, fx
 from .services import passkey
 
 BASE = Path(__file__).resolve().parent
@@ -131,7 +131,8 @@ def _payment_recipients(con, rep: dict, prof) -> list:
 
 def _build_pdf(con, report) -> bytes:
     rep, lines, cats = _load_report_for_pdf(con, report)
-    return pdf.build_report_pdf(rep, lines, cats)
+    conversion = fx.convert_lines(con, lines)   # ILS-converted summary (by expense date)
+    return pdf.build_report_pdf(rep, lines, cats, conversion=conversion)
 
 
 def _mail_lines(lines: list[dict]) -> list[dict]:

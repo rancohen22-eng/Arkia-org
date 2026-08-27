@@ -133,6 +133,19 @@ CREATE TABLE IF NOT EXISTS exp_line_files (       -- additional documents attach
 );
 CREATE INDEX IF NOT EXISTS idx_exp_lines_report ON exp_lines(report_id);
 
+-- cached foreign-exchange rates: 1 unit of `currency` = `rate` ILS on `rate_date`.
+-- Fetched on demand (by the expense date) from an external provider and cached so
+-- a report's PDF converts foreign lines to shekels without re-hitting the network.
+CREATE TABLE IF NOT EXISTS exp_fx_rates (
+    currency  TEXT NOT NULL,               -- ISO code we converted FROM (e.g. 'USD')
+    rate_date TEXT NOT NULL,               -- 'YYYY-MM-DD' — the expense date we asked for
+    rate      REAL NOT NULL,               -- ILS per 1 unit of `currency`
+    as_of     TEXT NOT NULL DEFAULT '',    -- the market date the provider actually returned
+    source    TEXT NOT NULL DEFAULT '',    -- provider label (e.g. 'ECB')
+    fetched_at TEXT DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (currency, rate_date)
+);
+
 -- passkeys (WebAuthn credentials) registered per user for Face ID / fingerprint login
 CREATE TABLE IF NOT EXISTS exp_webauthn (
     id INTEGER PRIMARY KEY,

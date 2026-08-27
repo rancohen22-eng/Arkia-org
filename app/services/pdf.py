@@ -79,8 +79,21 @@ class _PDF(FPDF):
         return (s + "…") if s else ""
 
 
+_SUMMARY_SRC = "ECB"                 # FX provider label shown in the conversion note
+
+
 def _money(n: float) -> str:
     return f"{(n or 0):,.2f}"
+
+
+def _fmt_date(s: str | None) -> str:
+    """'YYYY-MM-DD' → 'DD/MM/YYYY' (best-effort; returns the input on any mismatch)."""
+    s = (s or "").strip()
+    try:
+        y, m, d = s[:10].split("-")
+        return f"{d}/{m}/{y}"
+    except Exception:
+        return s
 
 
 def _amt(ln) -> str:
@@ -107,9 +120,13 @@ def _rtl_row(pdf: _PDF, cells, widths, aligns, h=8, header=False, size=10):
 
 
 def build_report_pdf(report: dict, lines: list[dict],
-                     category_totals: list[tuple[str, float]]) -> bytes:
+                     category_totals: list[tuple[str, float]],
+                     conversion: dict | None = None) -> bytes:
     """`report` needs title/owner_name/department/month/status/total.
-    `lines` need seq/supplier/amount/category/invoice_bytes (bytes or None)."""
+    `lines` need seq/supplier/amount/category/invoice_bytes (bytes or None).
+    `conversion` (from ``fx.convert_lines``) carries the ILS-converted per-category
+    totals; when it reports foreign currencies the summary is shown in shekels at
+    the expense-date rate (with the rates used), instead of naively summing codes."""
     pdf = _PDF()
     # diagonal status watermark on every page (credit compilations aren't approved → none)
     wm = None if report.get("type") == "credit" else _WM.get(report.get("status", ""))
@@ -197,16 +214,45 @@ def build_report_pdf(report: dict, lines: list[dict],
     pdf.ln(6)
 
     # ---- subtotals per category ----
-    if category_totals:
+    conv = conversion or {}
+    has_foreign = bool(conv.get("has_foreign"))
+    # foreign lines are converted to shekels at the expense-date rate; a pure-ILS
+    # report keeps the plain naive subtotals (identical numbers, no clutter).
+    summary = conv["categories"] if has_foreign else category_totals
+    if summary:
         pdf.set_font("Dejavu", "B", 12)
         pdf.set_text_color(*BLUE_D)
         pdf.set_x(pdf.l_margin)
         pdf.cell(W, 8, _rtl("סיכום לפי סיווג"), align="R")
         pdf.ln(10)
         cw = [W * 0.5, W * 0.5]
-        _rtl_row(pdf, ["סיווג", "סכום ₪"], cw, ["R", "L"], header=True)
-        for name, amt in category_totals:
+        amt_hdr = "סכום ₪ (מומר)" if has_foreign else "סכום ₪"
+        _rtl_row(pdf, ["סיווג", amt_hdr], cw, ["R", "L"], header=True)
+        for name, amt in summary:
             _rtl_row(pdf, [name or "—", _money(amt)], cw, ["R", "L"])
+        if has_foreign:
+            _rtl_row(pdf, ["סה\"כ ₪", _money(conv.get("grand_ils", 0))],
+                     cw, ["R", "L"], header=True)
+        # note: which rates were used, and any currency that couldn't be converted
+        if has_foreign:
+            pdf.ln(2)
+            pdf.set_font("Dejavu", "", 8.5)
+            pdf.set_text_color(*MUTED)
+            for cur, as_of, rate in conv.get("rates", []):
+                sym = config.currency_symbol(cur)
+                line = f"המרה: 1 {sym} = {rate:.4f} ₪  ·  שער {cur}/ILS ({_SUMMARY_SRC}) ליום {_fmt_date(as_of)}"
+                pdf.set_x(pdf.l_margin)
+                pdf.cell(W, 5, _rtl(pdf._fit(line, W - 2, 8.5)), align="R")
+                pdf.ln(5)
+            if conv.get("unconverted"):
+                pdf.set_text_color(180, 60, 60)
+                miss = ", ".join(conv["unconverted"])
+                pdf.set_x(pdf.l_margin)
+                pdf.cell(W, 5, _rtl(pdf._fit(
+                    "לא נמצא שער חליפין ל: " + miss + " — סכומים אלו לא נכללו בהמרה לשקל.",
+                    W - 2, 8.5)), align="R")
+                pdf.ln(5)
+            pdf.set_text_color(*INK)
 
     # ---- one page per document (a line may carry several) ----
     for ln in lines:
@@ -223,7 +269,7 @@ def build_report_pdf(report: dict, lines: list[dict],
             pdf.set_font("Dejavu", "B", 12)
             pdf.set_x(pdf.l_margin)
             seq = f"{ln['seq']}" + (f" ({i}/{n})" if n > 1 else "")
-            head = f"מסמך מס׳ {seq}  ·  {ln.get('supplier','')}  ·  ₪ {_money(ln.get('amount'))}"
+            head = f"מסמך מס׳ {seq}  ·  {ln.get('supplier','')}  ·  {_amt(ln)}"
             pdf.cell(W, 10, _rtl(pdf._fit(head, W - 4, 12)), border=0, align="R", fill=True)
             pdf.ln(14)
             _place_image(pdf, blob)
