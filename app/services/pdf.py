@@ -83,6 +83,11 @@ def _money(n: float) -> str:
     return f"{(n or 0):,.2f}"
 
 
+def _amt(ln) -> str:
+    """Amount with its currency symbol, e.g. '₪ 320.00' / '$ 45.00'."""
+    return config.currency_symbol(ln.get("currency") or "ILS") + " " + _money(ln.get("amount"))
+
+
 def _rtl_row(pdf: _PDF, cells, widths, aligns, h=8, header=False, size=10):
     """Draw one table row right-to-left: cell 0 sits at the right margin."""
     pdf.set_font("Dejavu", "B" if header else "", size)
@@ -162,14 +167,14 @@ def build_report_pdf(report: dict, lines: list[dict],
 
     widths = [W * 0.09, W * 0.19, W * 0.32, W * 0.20, W * 0.20]  # מס׳ | תאריך | ספק | סיווג | סכום
     aligns = ["C", "C", "R", "R", "L"]
-    header = ["מס׳", "תאריך", "ספק", "סיווג", "סכום ₪"]
+    header = ["מס׳", "תאריך", "ספק", "סיווג", "סכום"]
     _rtl_row(pdf, header, widths, aligns, header=True)
     for ln in lines:
         if pdf.get_y() > pdf.h - 25:
             pdf.add_page()
             _rtl_row(pdf, header, widths, aligns, header=True)
         _rtl_row(pdf, [str(ln["seq"]), ln.get("date", "") or "", ln.get("supplier", ""),
-                       ln.get("category", "") or "", _money(ln.get("amount"))],
+                       ln.get("category", "") or "", _amt(ln)],
                  widths, aligns)
         note = (ln.get("note") or "").strip()
         if note:
@@ -181,9 +186,14 @@ def build_report_pdf(report: dict, lines: list[dict],
                      border="LRB", align="R")
             pdf.ln(6)
 
-    # grand total row
-    _rtl_row(pdf, ["", "", "", "סה\"כ", _money(report.get("total"))],
-             widths, ["C", "C", "R", "R", "L"], header=True)
+    # grand total — one row per currency (summing across currencies is meaningless)
+    cur_tot: dict = {}
+    for ln in lines:
+        c = ln.get("currency") or "ILS"
+        cur_tot[c] = cur_tot.get(c, 0) + (ln.get("amount") or 0)
+    for c, amt in (cur_tot or {"ILS": 0}).items():
+        _rtl_row(pdf, ["", "", "", "סה\"כ", config.currency_symbol(c) + " " + _money(amt)],
+                 widths, ["C", "C", "R", "R", "L"], header=True)
     pdf.ln(6)
 
     # ---- subtotals per category ----

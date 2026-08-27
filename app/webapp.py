@@ -828,7 +828,8 @@ def _register_exp(app: FastAPI) -> None:
             return JSONResponse({"error": "לא ניתן לערוך דוח בסטטוס זה"}, status_code=409)
         ok = expense.update_line(con, rid, lid, body.get("supplier", ""),
                                  body.get("amount", 0), body.get("category_id") or None,
-                                 line_date=body.get("date", ""), note=body.get("note", ""))
+                                 line_date=body.get("date", ""), note=body.get("note", ""),
+                                 currency=body.get("currency", "ILS"))
         total = expense.report_dict(con, expense.get_report(con, rid))["total"]
         con.close()
         if not ok:

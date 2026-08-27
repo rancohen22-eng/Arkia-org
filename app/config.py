@@ -19,6 +19,14 @@ try:
 except Exception:
     pass
 
+# supported currencies for an expense line (code → display symbol); ILS is default
+CURRENCIES = {"ILS": "₪", "USD": "$", "EUR": "€", "GBP": "£", "CHF": "CHF", "JPY": "¥"}
+
+
+def currency_symbol(code: str) -> str:
+    return CURRENCIES.get((code or "ILS").upper(), code or "₪")
+
+
 BASE = Path(__file__).resolve().parent
 ROOT = BASE.parent
 DATA = ROOT / "data"

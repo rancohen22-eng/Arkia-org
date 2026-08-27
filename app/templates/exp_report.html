@@ -26,7 +26,7 @@
     <div id="ocrMsg" class="ocrmsg" style="display:none"></div>
     <table class="grid" id="linesTable"><thead><tr>
       <th style="width:44px">מס׳</th><th style="width:52px">מסמך</th><th style="width:140px">תאריך</th>
-      <th>ספק</th><th style="width:104px">סכום ₪</th><th style="width:128px">סיווג</th><th>הערה</th><th style="width:140px"></th>
+      <th>ספק</th><th style="width:150px">סכום</th><th style="width:120px">סיווג</th><th>הערה</th><th style="width:132px"></th>
     </tr></thead><tbody id="linesBody"></tbody></table>
     <div class="totalbar">סה"כ: <b id="grandTotal">₪ 0.00</b></div>
   </section>
@@ -75,7 +75,18 @@ const STATUS = {draft:["בהכנה","st-draft"], pending:["ממתין לאישו
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>(
   {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function money(n){ return (Number(n)||0).toLocaleString('he-IL',{minimumFractionDigits:2,maximumFractionDigits:2}); }
-function setTotal(t){ document.getElementById('grandTotal').textContent = '₪ ' + money(t); }
+const CUR = {ILS:'₪', USD:'$', EUR:'€', GBP:'£', CHF:'CHF', JPY:'¥'};
+function curOptions(sel){
+  sel = (sel||'ILS').toUpperCase();
+  return Object.keys(CUR).map(c=>`<option value="${c}" ${c===sel?'selected':''}>${CUR[c]} ${c}</option>`).join('');
+}
+// grand total, grouped by currency (summing across currencies would be meaningless)
+function setTotal(){
+  const sums={};
+  (DATA.lines||[]).forEach(l=>{ const c=(l.currency||'ILS').toUpperCase(); sums[c]=(sums[c]||0)+(parseFloat(l.amount)||0); });
+  const parts=Object.keys(sums).map(c=>(CUR[c]||c)+' '+money(sums[c]));
+  document.getElementById('grandTotal').textContent = parts.length ? parts.join('  ·  ') : '₪ 0.00';
+}
 
 async function load(){
   DATA = await fetch('/exp/api/report/'+RID).then(r=>r.json());
@@ -171,7 +182,10 @@ function renderLines(){
       <td class="c" data-label="מסמך">${docCell(l)}</td>
       <td data-label="תאריך"><input class="f-date" type="date" value="${esc(l.date||'')}" ${editable?'':'disabled'}></td>
       <td data-label="ספק"><input class="f-sup" placeholder="שם הספק" value="${esc(l.supplier)}" ${editable?'':'disabled'}></td>
-      <td data-label="סכום ₪"><input class="f-amt" type="number" step="0.01" value="${l.amount}" ${editable?'':'disabled'}></td>
+      <td data-label="סכום"><span style="display:flex;gap:5px;align-items:center">
+        <input class="f-amt" type="number" step="0.01" value="${l.amount}" ${editable?'':'disabled'}>
+        <select class="f-cur" style="flex:none;width:auto;padding:6px 4px" ${editable?'':'disabled'}>${curOptions(l.currency)}</select>
+      </span></td>
       <td data-label="סיווג"><select class="f-cat" ${editable?'':'disabled'}>${catOptions(l.category_id)}</select></td>
       <td data-label="הערה"><input class="f-note" placeholder="הערה (אופציונלי)" value="${esc(l.note||'')}" ${editable?'':'disabled'}></td>
       <td class="c actions-cell">
@@ -181,7 +195,7 @@ function renderLines(){
     </tr>`).join('');
   if(editable){
     body.querySelectorAll('tr').forEach(tr=>{
-      tr.querySelectorAll('.f-date,.f-sup,.f-amt,.f-cat,.f-note').forEach(el=>el.addEventListener('change',()=>saveLine(tr)));
+      tr.querySelectorAll('.f-date,.f-sup,.f-amt,.f-cur,.f-cat,.f-note').forEach(el=>el.addEventListener('change',()=>saveLine(tr)));
     });
   }
   setTotal(DATA.report.total);
@@ -195,6 +209,7 @@ function syncRow(tr){
   if(q('.f-date')) l.date=q('.f-date').value;
   if(q('.f-sup'))  l.supplier=q('.f-sup').value;
   if(q('.f-amt'))  l.amount=parseFloat(q('.f-amt').value)||0;
+  if(q('.f-cur'))  l.currency=q('.f-cur').value;
   if(q('.f-cat'))  l.category_id=q('.f-cat').value||null;
   if(q('.f-note')) l.note=q('.f-note').value;
 }
@@ -207,9 +222,10 @@ async function saveLine(tr, btn){
     amount: parseFloat(tr.querySelector('.f-amt').value)||0,
     date: tr.querySelector('.f-date').value,
     note: tr.querySelector('.f-note').value,
+    currency: tr.querySelector('.f-cur') ? tr.querySelector('.f-cur').value : 'ILS',
     category_id: tr.querySelector('.f-cat').value || null });
   if(res && res.error){ alert(res.error); return; }
-  if(res && res.total!=null) setTotal(res.total);
+  setTotal();
   if(btn){ const t=btn.textContent; btn.textContent='נשמר ✓'; setTimeout(()=>{btn.textContent=t;}, 1300); }
 }
 async function delLine(btn){

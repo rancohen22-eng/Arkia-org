@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import secrets
 
+from .. import config
+
 
 def _new_token() -> str:
     return secrets.token_urlsafe(24)
@@ -267,16 +269,23 @@ def get_lines(con, rid: int):
         "SELECT * FROM exp_lines WHERE report_id=? ORDER BY seq, id", (rid,)).fetchall()
 
 
+def _cur(code: str) -> str:
+    """Normalise a currency code to a supported one (fallback ILS)."""
+    c = (code or "ILS").strip().upper()
+    return c if c in config.CURRENCIES else "ILS"
+
+
 def add_line(con, rid: int, supplier: str = "", amount: float = 0.0,
              category_id=None, invoice_path: str | None = None,
-             ocr_raw: str = "", line_date: str = "", note: str = "") -> int:
+             ocr_raw: str = "", line_date: str = "", note: str = "",
+             currency: str = "ILS") -> int:
     nxt = (con.execute("SELECT COALESCE(MAX(seq),0)+1 n FROM exp_lines WHERE report_id=?",
                        (rid,)).fetchone()["n"])
     cur = con.execute(
-        "INSERT INTO exp_lines (report_id, seq, supplier, amount, line_date, note, category_id, "
-        "invoice_path, ocr_raw) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO exp_lines (report_id, seq, supplier, amount, line_date, note, currency, "
+        "category_id, invoice_path, ocr_raw) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (rid, nxt, (supplier or "").strip(), float(amount or 0), (line_date or "").strip(),
-         (note or "").strip(), category_id, invoice_path, ocr_raw or ""))
+         (note or "").strip(), _cur(currency), category_id, invoice_path, ocr_raw or ""))
     _recompute_total(con, rid)
     con.commit()
     return cur.lastrowid
@@ -311,15 +320,16 @@ def convert_report_type(con, rid: int, rtype: str, approver_id) -> bool:
 
 
 def update_line(con, rid: int, lid: int, supplier: str, amount: float,
-                category_id, line_date: str = "", note: str = "") -> bool:
+                category_id, line_date: str = "", note: str = "",
+                currency: str = "ILS") -> bool:
     line = con.execute("SELECT * FROM exp_lines WHERE id=? AND report_id=?",
                        (lid, rid)).fetchone()
     if line is None:
         return False
     con.execute(
-        "UPDATE exp_lines SET supplier=?, amount=?, line_date=?, note=?, category_id=? WHERE id=?",
+        "UPDATE exp_lines SET supplier=?, amount=?, line_date=?, note=?, currency=?, category_id=? WHERE id=?",
         ((supplier or "").strip(), float(amount or 0), (line_date or "").strip(),
-         (note or "").strip(), category_id, lid))
+         (note or "").strip(), _cur(currency), category_id, lid))
     _recompute_total(con, rid)
     con.commit()
     return True
@@ -448,8 +458,10 @@ def line_dict(con, r) -> dict:
                           (r["category_id"],)).fetchone()
         cat = row["name"] if row else None
     extras = [{"id": f["id"]} for f in list_line_files(con, r["id"])]
+    cur = _cur(r["currency"] if "currency" in r.keys() else "ILS")
     return {"id": r["id"], "seq": r["seq"], "supplier": r["supplier"],
             "amount": r["amount"], "date": r["line_date"], "note": r["note"],
+            "currency": cur, "currency_symbol": config.currency_symbol(cur),
             "category_id": r["category_id"],
             "category": cat, "has_image": bool(r["invoice_path"]),
             "extra_files": extras}

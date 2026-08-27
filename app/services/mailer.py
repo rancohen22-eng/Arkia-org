@@ -132,13 +132,28 @@ def _fmt(n: float) -> str:
     return f"{n:,.2f}"
 
 
+def _amt(ln: dict) -> str:
+    return config.currency_symbol(ln.get("currency") or "ILS") + " " + _fmt(ln.get("amount") or 0)
+
+
+def _totals(lines: list[dict]) -> str:
+    """Per-currency totals, e.g. '₪ 320.00 · $ 45.00' (summing across is meaningless)."""
+    tot: dict = {}
+    for ln in (lines or []):
+        c = ln.get("currency") or "ILS"
+        tot[c] = tot.get(c, 0) + (ln.get("amount") or 0)
+    if not tot:
+        return "₪ " + _fmt(0)
+    return " · ".join(config.currency_symbol(c) + " " + _fmt(a) for c, a in tot.items())
+
+
 def _lines_table(lines: list[dict]) -> str:
     th = "padding:8px;border:1px solid #e2e8f0;font-size:13px;text-align:right"
     head = ("<tr style='background:#f8fafc'>"
             f"<th style='{th};text-align:center'>מס׳</th>"
             f"<th style='{th}'>ספק</th>"
             f"<th style='{th}'>סיווג</th>"
-            f"<th style='{th};text-align:left'>סכום ₪</th></tr>")
+            f"<th style='{th};text-align:left'>סכום</th></tr>")
     rows = ""
     for ln in lines:
         note = _esc(ln.get("note") or "")
@@ -149,7 +164,7 @@ def _lines_table(lines: list[dict]) -> str:
             f"<td style='padding:8px;border:1px solid #e2e8f0;text-align:center'>{ln['seq']}</td>"
             f"<td style='padding:8px;border:1px solid #e2e8f0;text-align:right'>{_esc(ln['supplier'])}{note_html}</td>"
             f"<td style='padding:8px;border:1px solid #e2e8f0;text-align:right'>{_esc(ln.get('category') or '')}</td>"
-            f"<td style='padding:8px;border:1px solid #e2e8f0;text-align:left'>{_fmt(ln['amount'])}</td>"
+            f"<td style='padding:8px;border:1px solid #e2e8f0;text-align:left;white-space:nowrap'>{_amt(ln)}</td>"
             "</tr>")
     return (f"<table dir='rtl' style='border-collapse:collapse;width:100%;margin:10px 0'>"
             f"{head}{rows}</table>")
@@ -199,7 +214,7 @@ def approval_request_html(report: dict, lines: list[dict], approve_url: str,
         <tr><td style="padding:3px 10px 3px 0;color:#64748b">מחלקה</td><td>{_esc(report['department'])}</td></tr>
         <tr><td style="padding:3px 10px 3px 0;color:#64748b">חודש</td><td>{_esc(report['month'])}</td></tr>
         <tr><td style="padding:3px 10px 3px 0;color:#64748b">סכום ההחזר</td>
-            <td style="font-size:17px;font-weight:700;color:{BLUE_D}">₪ {_fmt(report['total'])}</td></tr>
+            <td style="font-size:17px;font-weight:700;color:{BLUE_D}">{_totals(lines)}</td></tr>
       </table>
       {_lines_table(lines)}
       <p style="font-size:14px;color:#475569">ריכוז החשבוניות והמסמכים הסרוקים מצורפים כקובץ PDF.</p>
@@ -250,7 +265,7 @@ def plain_report_html(report: dict, lines: list[dict], sender_name: str = "") ->
       <table style="font-size:14px;margin:6px 0">
         <tr><td style="padding:3px 10px 3px 0;color:#64748b">חודש</td><td>{_esc(report['month'])}</td></tr>
         <tr><td style="padding:3px 10px 3px 0;color:#64748b">סכום כולל</td>
-            <td style="font-weight:700;color:{BLUE_D}">₪ {_fmt(report['total'])}</td></tr>
+            <td style="font-weight:700;color:{BLUE_D}">{_totals(lines)}</td></tr>
       </table>
       {_lines_table(lines)}
       <p style="font-size:14px;color:#475569">ריכוז החשבוניות המלא והמסמכים הסרוקים מצורפים כ-PDF.</p>
@@ -273,7 +288,7 @@ def payment_html(report: dict, lines: list[dict]) -> str:
         <tr><td style="padding:3px 10px 3px 0;color:#64748b">מחלקה</td><td>{_esc(report['department'])}</td></tr>
         <tr><td style="padding:3px 10px 3px 0;color:#64748b">חודש</td><td>{_esc(report['month'])}</td></tr>
         <tr><td style="padding:3px 10px 3px 0;color:#64748b">סכום לתשלום</td>
-            <td style="font-size:18px;font-weight:800;color:{BLUE_D}">₪ {_fmt(report['total'])}</td></tr>
+            <td style="font-size:18px;font-weight:800;color:{BLUE_D}">{_totals(lines)}</td></tr>
       </table>
       {_lines_table(lines)}
       <p style="font-size:14px;color:#475569">הדוח המלא והמסמכים הסרוקים מצורפים כקובץ PDF.</p>
