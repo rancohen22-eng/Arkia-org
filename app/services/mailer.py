@@ -128,6 +128,34 @@ def _btn(href: str, label: str, color: str = BLUE) -> str:
             f'font-size:15px;margin:6px 6px 6px 0">{label}</a>')
 
 
+def welcome_html(display_name: str, username: str, temp_password: str,
+                 login_url: str) -> str:
+    """Invite e-mail: greet the user and hand them their initial login details.
+    The password is one-time — they're forced to change it on first login."""
+    hello = f"שלום {display_name}," if (display_name or "").strip() else "שלום,"
+    cred = (
+        '<table style="margin:8px 0 4px;font-size:15px;border-collapse:collapse">'
+        f'<tr><td style="color:#64748b;padding:4px 14px 4px 0">שם משתמש</td>'
+        f'<td style="font-weight:800;font-family:monospace;font-size:16px">{username}</td></tr>'
+        f'<tr><td style="color:#64748b;padding:4px 14px 4px 0">סיסמה ראשונית</td>'
+        f'<td style="font-weight:800;font-family:monospace;font-size:16px;letter-spacing:1px">'
+        f'{temp_password}</td></tr></table>')
+    btn = _btn(login_url, "כניסה למערכת") if login_url else ""
+    body = (
+        f'<p style="font-size:16px;margin:0 0 6px">{hello}</p>'
+        '<p style="margin:0 0 12px">נפתח עבורך חשבון במערכת <b>החזרי ההוצאות של ארקיע</b>. '
+        'אלה פרטי ההתחברות הראשוניים שלך:</p>'
+        f'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;'
+        f'padding:12px 16px">{cred}</div>'
+        '<p style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:8px;'
+        'padding:10px 12px;font-size:13px;margin:14px 0">מטעמי אבטחה — בכניסה הראשונה תתבקש/י '
+        'לבחור סיסמה חדשה משלך. הסיסמה הראשונית תקפה לכניסה אחת בלבד.</p>'
+        f'{btn}'
+        '<p style="color:#94a3b8;font-size:12px;margin-top:16px">אם לא ציפית למייל זה, אפשר '
+        'להתעלם ממנו.</p>')
+    return _shell("ברוך הבא למערכת", body)
+
+
 def _fmt(n: float) -> str:
     return f"{n:,.2f}"
 

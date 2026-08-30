@@ -47,6 +47,10 @@ PUBLIC_PREFIXES = ("/login", "/logout", "/static", "/health", "/favicon",
                    "/exp/approve", "/exp/api/public", "/exp/track",
                    "/auth/webauthn/login")   # passkey login is pre-auth; register isn't
 
+# while a user still holds a one-time password, only these are reachable
+CHANGE_PW_ALLOWED = ("/change-password", "/api/change-password",
+                     "/logout", "/static", "/health", "/favicon")
+
 IDLE_SECONDS = int(os.environ.get("SESSION_IDLE_SECONDS", str(60 * 60)))
 templates.env.globals["idle_seconds"] = IDLE_SECONDS
 
@@ -201,9 +205,22 @@ def _register_common(app: FastAPI) -> None:
         username = (form.get("username") or "").strip()
         password = form.get("password") or ""
         nxt = form.get("next") or request.app.state.home_path
+        # env/file users (admin etc.) first; then in-app accounts (exp_users)
         if auth.verify(username, password):
             request.session["user"] = username
+            request.session.pop("must_change", None)
             return RedirectResponse(nxt, status_code=303)
+        con = connect()
+        try:
+            if expense.verify_db_user(con, username, password):
+                request.session["user"] = username.strip().lower()
+                if expense.user_must_change(con, username):
+                    request.session["must_change"] = True
+                    return RedirectResponse("/change-password", status_code=303)
+                request.session.pop("must_change", None)
+                return RedirectResponse(nxt, status_code=303)
+        finally:
+            con.close()
         return templates.TemplateResponse(
             request, "login.html",
             {"title": "התחברות", "next": nxt, "error": "שם משתמש או סיסמה שגויים"},
@@ -213,6 +230,39 @@ def _register_common(app: FastAPI) -> None:
     def logout(request: Request):
         request.session.clear()
         return RedirectResponse("/login", status_code=303)
+
+    @app.get("/change-password", response_class=HTMLResponse)
+    def change_password_page(request: Request):
+        if not request.session.get("user"):
+            return RedirectResponse("/login?next=/change-password", status_code=303)
+        return templates.TemplateResponse(
+            request, "change_password.html",
+            {"title": "שינוי סיסמה", "forced": bool(request.session.get("must_change"))})
+
+    @app.post("/api/change-password")
+    async def change_password_submit(request: Request):
+        if not request.session.get("user"):
+            return JSONResponse({"error": "לא מחובר"}, status_code=401)
+        body = await request.json()
+        new = body.get("new_password") or ""
+        confirm = body.get("confirm") or ""
+        current = body.get("current_password") or ""
+        forced = bool(request.session.get("must_change"))
+        if len(new) < 8:
+            return JSONResponse({"error": "הסיסמה חייבת להכיל לפחות 8 תווים"}, status_code=400)
+        if new != confirm:
+            return JSONResponse({"error": "אימות הסיסמה אינו תואם"}, status_code=400)
+        u = (get_user(request) or "").strip().lower()
+        con = connect()
+        try:
+            # a voluntary change (not the forced first-login one) re-checks the current password
+            if not forced and not (auth.verify(u, current) or expense.verify_db_user(con, u, current)):
+                return JSONResponse({"error": "הסיסמה הנוכחית שגויה"}, status_code=403)
+            expense.set_user_password(con, u, new, must_change=False)
+        finally:
+            con.close()
+        request.session.pop("must_change", None)
+        return {"ok": True}
 
 
 # ==================== עץ ארגוני (org chart) ====================
@@ -645,6 +695,37 @@ def _register_exp(app: FastAPI) -> None:
         expense.delete_profile(con, username)
         con.close()
         return {"ok": True}
+
+    @app.post("/exp/api/settings/profile/{username}/invite")
+    def exp_api_profile_invite(username: str, request: Request):
+        """Generate a one-time password for the user, e-mail it (welcome + login
+        link), and force a change on first login. Returns the password too, so the
+        admin can relay it when no e-mail is on file / the mail didn't go out."""
+        if (err := _forbidden_admin(request)):
+            return err
+        con = connect()
+        prof = expense.get_profile(con, username)
+        if prof is None:
+            con.close()
+            return JSONResponse({"error": "המשתמש לא נמצא — יש להוסיף אותו קודם"}, status_code=404)
+        temp = auth.random_password()
+        expense.set_user_password(con, username, temp, must_change=True)
+        email = (prof["email"] or "").strip()
+        display = (prof["display_name"] or "").strip()
+        audit(con, get_user(request), "exp_users", (username or "").strip().lower(),
+              "invite", None, "sent" if email else "manual")
+        con.commit()
+        con.close()
+        emailed, err_msg = False, None
+        if email:
+            login_url = (config.APP_BASE_URL + "/login") if config.APP_BASE_URL else ""
+            res = mailer.send_mail(
+                email, "פרטי התחברות — מערכת החזרי הוצאות של ארקיע",
+                mailer.welcome_html(display, (username or "").strip().lower(), temp, login_url))
+            emailed = bool(res.get("sent"))
+            err_msg = res.get("error")
+        return {"ok": True, "emailed": emailed, "email": email,
+                "password": temp, "error": err_msg}
 
     # ==================== expense: employee report flow ====================
 
@@ -1263,7 +1344,15 @@ def create_app(*, include_org: bool = True, include_exp: bool = True,
     @app.middleware("http")
     async def require_login(request: Request, call_next):
         path = request.url.path
-        if request.session.get("user") or any(path.startswith(p) for p in PUBLIC_PREFIXES):
+        if request.session.get("user"):
+            # a user with a one-time password is confined to the change-password flow
+            if request.session.get("must_change") and not any(
+                    path.startswith(p) for p in CHANGE_PW_ALLOWED):
+                if path.startswith(("/api/", "/org/api/", "/exp/api/")):
+                    return JSONResponse({"error": "נדרש שינוי סיסמה לפני המשך"}, status_code=403)
+                return RedirectResponse("/change-password", status_code=303)
+            return await call_next(request)
+        if any(path.startswith(p) for p in PUBLIC_PREFIXES):
             return await call_next(request)
         if path.startswith(("/api/", "/org/api/", "/exp/api/")):
             return JSONResponse({"error": "לא מחובר — נא להתחבר מחדש"}, status_code=401)

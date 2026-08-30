@@ -62,7 +62,58 @@ def profile_approver_id(con, username: str):
 
 
 def delete_profile(con, username: str) -> None:
-    con.execute("DELETE FROM exp_profiles WHERE username=?",
+    u = (username or "").strip().lower()
+    con.execute("DELETE FROM exp_profiles WHERE username=?", (u,))
+    con.execute("DELETE FROM exp_users WHERE username=?", (u,))   # also revoke login
+    con.commit()
+
+
+# ==================== in-app login credentials (exp_users) ====================
+# Admin invites a user → an initial password is generated, hashed here, and e-mailed;
+# the user is forced to change it on first login. These accounts coexist with the
+# ARKIA_USERS / users.txt env-file users (which the auth module still checks first).
+
+def set_user_password(con, username: str, password: str, must_change: bool = True) -> None:
+    """Store a (hashed) password for ``username``, creating the login if needed."""
+    from .. import auth
+    u = (username or "").strip().lower()
+    if not u:
+        raise ValueError("username required")
+    con.execute(
+        "INSERT INTO exp_users (username, password_hash, must_change, is_active, password_set_at) "
+        "VALUES (?, ?, ?, 1, datetime('now','localtime')) "
+        "ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, "
+        "must_change=excluded.must_change, is_active=1, password_set_at=excluded.password_set_at",
+        (u, auth.hash_password(password), 1 if must_change else 0))
+    con.commit()
+
+
+def get_user_login(con, username: str):
+    return con.execute("SELECT * FROM exp_users WHERE username=?",
+                       ((username or "").strip().lower(),)).fetchone()
+
+
+def has_login(con, username: str) -> bool:
+    row = get_user_login(con, username)
+    return bool(row and row["password_hash"])
+
+
+def verify_db_user(con, username: str, password: str) -> bool:
+    """Check a password against an active in-app account (constant-time via auth)."""
+    from .. import auth
+    row = get_user_login(con, username)
+    if row is None or not row["is_active"] or not row["password_hash"]:
+        return False
+    return auth._verify_pbkdf2(row["password_hash"], password or "")
+
+
+def user_must_change(con, username: str) -> bool:
+    row = get_user_login(con, username)
+    return bool(row and row["must_change"])
+
+
+def clear_must_change(con, username: str) -> None:
+    con.execute("UPDATE exp_users SET must_change=0 WHERE username=?",
                 ((username or "").strip().lower(),))
     con.commit()
 
@@ -198,8 +249,10 @@ def settings_snapshot(con) -> dict:
                        for r in list_accounting(con)],
         "departments": [_dict(r, "id", "name", "is_active")
                         for r in list_departments(con)],
-        "profiles": [_dict(r, "username", "display_name", "email", "department",
-                           "approver_id", "is_active") for r in list_profiles(con)],
+        "profiles": [dict(_dict(r, "username", "display_name", "email", "department",
+                                 "approver_id", "is_active"),
+                          has_login=has_login(con, r["username"]))
+                     for r in list_profiles(con)],
     }
 
 

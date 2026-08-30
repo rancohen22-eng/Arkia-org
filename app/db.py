@@ -146,6 +146,18 @@ CREATE TABLE IF NOT EXISTS exp_fx_rates (
     PRIMARY KEY (currency, rate_date)
 );
 
+-- login credentials managed in-app (admin invites a user → initial password e-mailed,
+-- forced change on first login). Separate from exp_profiles (display/email/department)
+-- and from the ARKIA_USERS/users.txt env-file users, which keep working alongside it.
+CREATE TABLE IF NOT EXISTS exp_users (
+    username       TEXT PRIMARY KEY,               -- lower-cased login id (matches exp_profiles.username)
+    password_hash  TEXT NOT NULL DEFAULT '',       -- pbkdf2$... (never plaintext)
+    must_change    INTEGER NOT NULL DEFAULT 1,      -- force a password change on next login
+    is_active      INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT DEFAULT (datetime('now','localtime')),
+    password_set_at TEXT
+);
+
 -- passkeys (WebAuthn credentials) registered per user for Face ID / fingerprint login
 CREATE TABLE IF NOT EXISTS exp_webauthn (
     id INTEGER PRIMARY KEY,
