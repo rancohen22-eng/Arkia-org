@@ -1,0 +1,27 @@
+# systemd service — Arkia expense-reimbursement system (standalone, no org tree)
+# Runs on the same box as arkia-org, in its own directory /opt/arkia-exp, on its
+# own port 8021, against its own database (data/exp.db) and its own users.
+# Install:  sudo cp deploy/arkia-exp.service /etc/systemd/system/arkia-exp.service
+#           sudo systemctl daemon-reload && sudo systemctl enable --now arkia-exp
+# Logs:     journalctl -u arkia-exp -f
+[Unit]
+Description=Arkia expense-reimbursement system (FastAPI/uvicorn, /exp only)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/arkia-exp
+EnvironmentFile=/opt/arkia-exp/.env
+# Own database, kept fully separate from the org tree's data/org.db.
+Environment=ARKIA_DB_PATH=/opt/arkia-exp/data/exp.db
+# bind to localhost only — Caddy is the public front door.
+ExecStart=/opt/arkia-exp/.venv/bin/uvicorn app.exp_app:app --host 127.0.0.1 --port 8021 --workers 1
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -3,3 +3,12 @@ uvicorn[standard]==0.34.0
 jinja2==3.1.5
 python-multipart==0.0.20
 itsdangerous==2.2.0
+
+# expense module — PDF generation (pure-Python, no system libs, no browser)
+fpdf2==2.8.7
+python-bidi>=0.4.2
+Pillow>=10.0.0
+
+# passkey / WebAuthn login. Enabled with WEBAUTHN_RP_ID / WEBAUTHN_ORIGIN in .env;
+# the app still runs fine when those aren't set (the feature just stays hidden).
+webauthn>=2.0.0

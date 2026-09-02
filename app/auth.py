@@ -53,6 +53,13 @@ def load_users() -> dict[str, str]:
     return users
 
 
+def random_password(length: int = 10) -> str:
+    """A readable one-time password: no ambiguous characters (0/O, 1/l/I), mixed
+    case + digits, so it survives being read aloud / retyped from an e-mail."""
+    alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(max(8, length)))
+
+
 def hash_password(password: str) -> str:
     """Produce a 'pbkdf2$<iters>$<salt_b64>$<hash_b64>' string (for hashed users.txt)."""
     salt = secrets.token_bytes(16)

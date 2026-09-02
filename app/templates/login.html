@@ -3,17 +3,48 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>התחברות — עץ ארגוני ארקיע</title>
-<link rel="stylesheet" href="/static/css/app.css?v=org1">
+<title>התחברות — {{ request.app.state.site_name }}</title>
+<link rel="stylesheet" href="/static/fonts/assistant.css?v=1">
+<link rel="stylesheet" href="/static/css/app.css?v=exp7">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<meta name="theme-color" content="#14367f">
+<link rel="icon" href="/static/icons/favicon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="החזרים">
 </head>
 <body class="loginbg">
 <form class="logincard" method="post" action="/login">
-  <h1>🌳 עץ ארגוני · ארקיע</h1>
+  <div class="login-logo"><img src="/static/img/arkia-logo.png?v=1" alt="arkia"></div>
+  <h1>החזרי הוצאות</h1>
+  <p class="login-sub">התחברות למערכת</p>
   <input type="hidden" name="next" value="{{ next }}">
-  <label>שם משתמש<input name="username" autofocus autocomplete="username"></label>
+  <label>שם משתמש<input id="username" name="username" autofocus autocomplete="username"></label>
   <label>סיסמה<input name="password" type="password" autocomplete="current-password"></label>
   {% if error %}<div class="err">{{ error }}</div>{% endif %}
   <button type="submit">התחברות</button>
+  {% if passkey_enabled() %}
+  <div class="or">או</div>
+  <button type="button" class="secondary" id="pkBtn">🔐 התחברות עם Passkey / Face ID</button>
+  <div class="err" id="pkErr" style="display:none"></div>
+  {% endif %}
 </form>
+{% if passkey_enabled() %}
+<script src="/static/js/webauthn.js?v=1"></script>
+<script>
+document.getElementById('pkBtn').addEventListener('click', async function(){
+  const err = document.getElementById('pkErr'); err.style.display='none';
+  const u = document.getElementById('username').value.trim();
+  if(!u){ err.textContent='יש להזין שם משתמש'; err.style.display='block';
+    document.getElementById('username').focus(); return; }
+  try{
+    await ArkiaPasskey.login(u);
+    location.href = {{ next | tojson }} || '/exp';
+  }catch(e){ err.textContent = e.message || 'ההתחברות נכשלה'; err.style.display='block'; }
+});
+</script>
+{% endif %}
 </body>
 </html>

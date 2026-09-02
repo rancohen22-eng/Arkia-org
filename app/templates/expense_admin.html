@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="exp-head">
+  <h1>הגדרות · החזרי הוצאות וריכוז אשראי</h1>
+  <div class="toolbar">
+    <a class="linkbtn" href="/exp">→ חזרה למערכת ההחזרים</a>
+    {% if request.app.state.include_org %}<a class="linkbtn" href="/">עץ ארגוני</a>{% endif %}
+  </div>
+</div>
+<p class="hint">מסך זה פתוח למנהל מערכת בלבד. כאן מגדירים את הרשימות שהעובדים בוחרים מהן.</p>
+
+<div class="cards">
+
+  <!-- categories -->
+  <section class="card" id="card-categories">
+    <h2>סיווגי הוצאה</h2>
+    <p class="hint">הרשימה הנפתחת שממנה בוחרים סיווג לכל חשבונית.</p>
+    <table class="grid"><thead><tr>
+      <th>שם הסיווג</th><th style="width:80px">סדר</th><th style="width:70px">פעיל</th><th style="width:140px"></th>
+    </tr></thead><tbody id="tb-categories"></tbody></table>
+    <div class="addrow">
+      <input id="new-cat-name" placeholder="שם סיווג חדש">
+      <input id="new-cat-sort" type="number" value="0" style="width:80px" title="סדר">
+      <button onclick="addCategory()">הוסף</button>
+    </div>
+  </section>
+
+  <!-- approvers -->
+  <section class="card" id="card-approvers">
+    <h2>מנהלים מאשרים</h2>
+    <p class="hint">רשימת המנהלים המאשרים. משייכים מאשר קבוע לכל עובד בכרטיס המשתמשים למטה; המייל לאישור יישלח לכתובת שכאן.</p>
+    <table class="grid"><thead><tr>
+      <th>שם</th><th>מייל</th><th style="width:70px">פעיל</th><th style="width:140px"></th>
+    </tr></thead><tbody id="tb-approvers"></tbody></table>
+    <div class="addrow">
+      <input id="new-app-name" placeholder="שם המאשר">
+      <input id="new-app-email" placeholder="כתובת מייל" type="email">
+      <button onclick="addApprover()">הוסף</button>
+    </div>
+  </section>
+
+  <!-- accounting dept -->
+  <section class="card" id="card-accounting">
+    <h2>הנהלת חשבונות</h2>
+    <p class="hint">משתמשי מחלקת הנהלת החשבונות. לאחר אישור דוח החזר הוצאות או סגירת דוח אשראי לחודש — נשלח מייל "לתשלום" שאליו מכותבים העובד, המאשר, וכל הכתובות שכאן.</p>
+    <table class="grid"><thead><tr>
+      <th>שם</th><th>מייל</th><th style="width:70px">פעיל</th><th style="width:140px"></th>
+    </tr></thead><tbody id="tb-accounting"></tbody></table>
+    <div class="addrow">
+      <input id="new-acc-name" placeholder="שם">
+      <input id="new-acc-email" placeholder="כתובת מייל" type="email">
+      <button onclick="addAccounting()">הוסף</button>
+    </div>
+  </section>
+
+  <!-- departments -->
+  <section class="card" id="card-departments">
+    <h2>מחלקות</h2>
+    <p class="hint">רשימת המחלקות לבחירה. מחלקת ברירת המחדל של כל עובד נקבעת בכרטיס המשתמשים.</p>
+    <table class="grid"><thead><tr>
+      <th>שם מחלקה</th><th style="width:70px">פעיל</th><th style="width:140px"></th>
+    </tr></thead><tbody id="tb-departments"></tbody></table>
+    <div class="addrow">
+      <input id="new-dep-name" placeholder="שם מחלקה חדשה">
+      <button onclick="addDepartment()">הוסף</button>
+    </div>
+  </section>
+
+  <!-- profiles -->
+  <section class="card" id="card-profiles">
+    <h2>משתמשים ופרופילים</h2>
+    <p class="hint">לכל שם משתמש (מזהה ההתחברות) — שם תצוגה, מייל, מחלקה, <b>ומנהל מאשר קבוע</b>.
+      המאשר נקבע כאן ע״י מנהל המערכת בלבד — העובד אינו בוחר אותו בעצמו.<br>
+      כדי לאפשר התחברות: הוסיפו משתמש (עם מייל) ולחצו <b>🔑 שלח סיסמה</b> — תיווצר סיסמה ראשונית
+      אקראית שתישלח למייל שלו, והוא יתבקש לבחור סיסמה חדשה בכניסה הראשונה.</p>
+    <table class="grid"><thead><tr>
+      <th>שם משתמש</th><th>שם תצוגה</th><th>מייל</th><th>מחלקה</th><th>מנהל מאשר</th><th style="width:70px">פעיל</th><th style="width:230px"></th>
+    </tr></thead><tbody id="tb-profiles"></tbody></table>
+    <div class="addrow">
+      <input id="new-prof-user" placeholder="שם משתמש (התחברות)">
+      <input id="new-prof-name" placeholder="שם תצוגה">
+      <input id="new-prof-email" placeholder="מייל" type="email">
+      <input id="new-prof-dept" placeholder="מחלקה">
+      <select id="new-prof-appr"></select>
+      <button onclick="addProfile()">הוסף</button>
+    </div>
+  </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let DEPTS = [];       // active department names, for the profile dropdown
+let APPROVERS = [];   // {id,name} active approvers, for the per-user approver dropdown
+
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g, c => (
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function load(){
+  const d = await fetch('/exp/api/settings').then(r=>r.json());
+  DEPTS = (d.departments||[]).filter(x=>x.is_active).map(x=>x.name);
+  APPROVERS = (d.approvers||[]).filter(x=>x.is_active);
+  renderCategories(d.categories);
+  renderApprovers(d.approvers);
+  renderAccounting(d.accounting);
+  renderDepartments(d.departments);
+  renderProfiles(d.profiles);
+  document.getElementById('new-prof-appr').innerHTML = apprOptions(null);
+}
+
+function apprOptions(sel){
+  return ['<option value="">— מנהל מאשר —</option>'].concat(APPROVERS.map(a=>
+    `<option value="${a.id}" ${a.id===sel?'selected':''}>${esc(a.name)}</option>`)).join('');
+}
+
+function chk(on){ return `<input type="checkbox" ${on?'checked':''}>`; }
+
+// ---------- categories ----------
+function renderCategories(rows){
+  document.getElementById('tb-categories').innerHTML = (rows||[]).map(r=>`
+    <tr data-id="${r.id}">
+      <td><input class="f-name" value="${esc(r.name)}"></td>
+      <td><input class="f-sort" type="number" value="${r.sort}"></td>
+      <td class="c">${chk(r.is_active)}</td>
+      <td class="c">
+        <button class="secondary sm" onclick="saveCategory(this)">שמור</button>
+        <button class="danger sm" onclick="delCategory(this)">מחק</button>
+      </td>
+    </tr>`).join('') || emptyRow(4);
+}
+async function addCategory(){
+  const name=val('new-cat-name'); if(!name) return;
+  await apiPost('/exp/api/settings/category', {name, sort:+val('new-cat-sort')||0});
+  document.getElementById('new-cat-name').value=''; load();
+}
+async function saveCategory(btn){
+  const tr=btn.closest('tr');
+  await apiPost('/exp/api/settings/category/'+tr.dataset.id, {
+    name: tr.querySelector('.f-name').value,
+    sort: +tr.querySelector('.f-sort').value||0,
+    is_active: tr.querySelector('input[type=checkbox]').checked });
+  flash(btn);
+}
+async function delCategory(btn){
+  if(!confirm('למחוק את הסיווג?')) return;
+  await apiPost('/exp/api/settings/category/'+btn.closest('tr').dataset.id+'/delete',{}); load();
+}
+
+// ---------- approvers ----------
+function renderApprovers(rows){
+  document.getElementById('tb-approvers').innerHTML = (rows||[]).map(r=>`
+    <tr data-id="${r.id}">
+      <td><input class="f-name" value="${esc(r.name)}"></td>
+      <td><input class="f-email" value="${esc(r.email)}" type="email"></td>
+      <td class="c">${chk(r.is_active)}</td>
+      <td class="c">
+        <button class="secondary sm" onclick="saveApprover(this)">שמור</button>
+        <button class="danger sm" onclick="delApprover(this)">מחק</button>
+      </td>
+    </tr>`).join('') || emptyRow(4);
+}
+async function addApprover(){
+  const name=val('new-app-name'), email=val('new-app-email');
+  if(!name||!email){ alert('שם ומייל נדרשים'); return; }
+  await apiPost('/exp/api/settings/approver', {name, email});
+  document.getElementById('new-app-name').value='';
+  document.getElementById('new-app-email').value=''; load();
+}
+async function saveApprover(btn){
+  const tr=btn.closest('tr');
+  await apiPost('/exp/api/settings/approver/'+tr.dataset.id, {
+    name: tr.querySelector('.f-name').value,
+    email: tr.querySelector('.f-email').value,
+    is_active: tr.querySelector('input[type=checkbox]').checked });
+  flash(btn);
+}
+async function delApprover(btn){
+  if(!confirm('למחוק את המאשר?')) return;
+  await apiPost('/exp/api/settings/approver/'+btn.closest('tr').dataset.id+'/delete',{}); load();
+}
+
+// ---------- accounting dept ----------
+function renderAccounting(rows){
+  document.getElementById('tb-accounting').innerHTML = (rows||[]).map(r=>`
+    <tr data-id="${r.id}">
+      <td><input class="f-name" value="${esc(r.name)}"></td>
+      <td><input class="f-email" value="${esc(r.email)}" type="email"></td>
+      <td class="c">${chk(r.is_active)}</td>
+      <td class="c">
+        <button class="secondary sm" onclick="saveAccounting(this)">שמור</button>
+        <button class="danger sm" onclick="delAccounting(this)">מחק</button>
+      </td>
+    </tr>`).join('') || emptyRow(4);
+}
+async function addAccounting(){
+  const name=val('new-acc-name'), email=val('new-acc-email');
+  if(!name||!email){ alert('שם ומייל נדרשים'); return; }
+  await apiPost('/exp/api/settings/accounting', {name, email});
+  document.getElementById('new-acc-name').value='';
+  document.getElementById('new-acc-email').value=''; load();
+}
+async function saveAccounting(btn){
+  const tr=btn.closest('tr');
+  await apiPost('/exp/api/settings/accounting/'+tr.dataset.id, {
+    name: tr.querySelector('.f-name').value,
+    email: tr.querySelector('.f-email').value,
+    is_active: tr.querySelector('input[type=checkbox]').checked });
+  flash(btn);
+}
+async function delAccounting(btn){
+  if(!confirm('למחוק?')) return;
+  await apiPost('/exp/api/settings/accounting/'+btn.closest('tr').dataset.id+'/delete',{}); load();
+}
+
+// ---------- departments ----------
+function renderDepartments(rows){
+  document.getElementById('tb-departments').innerHTML = (rows||[]).map(r=>`
+    <tr data-id="${r.id}">
+      <td><input class="f-name" value="${esc(r.name)}"></td>
+      <td class="c">${chk(r.is_active)}</td>
+      <td class="c">
+        <button class="secondary sm" onclick="saveDepartment(this)">שמור</button>
+        <button class="danger sm" onclick="delDepartment(this)">מחק</button>
+      </td>
+    </tr>`).join('') || emptyRow(3);
+}
+async function addDepartment(){
+  const name=val('new-dep-name'); if(!name) return;
+  await apiPost('/exp/api/settings/department', {name});
+  document.getElementById('new-dep-name').value=''; load();
+}
+async function saveDepartment(btn){
+  const tr=btn.closest('tr');
+  await apiPost('/exp/api/settings/department/'+tr.dataset.id, {
+    name: tr.querySelector('.f-name').value,
+    is_active: tr.querySelector('input[type=checkbox]').checked });
+  flash(btn);
+}
+async function delDepartment(btn){
+  if(!confirm('למחוק את המחלקה?')) return;
+  await apiPost('/exp/api/settings/department/'+btn.closest('tr').dataset.id+'/delete',{}); load();
+}
+
+// ---------- profiles ----------
+function deptOptions(sel){
+  const opts = ['<option value="">—</option>'].concat(DEPTS.map(d=>
+    `<option ${d===sel?'selected':''}>${esc(d)}</option>`));
+  // keep a stored value that isn't in the active list, so it isn't lost
+  if(sel && !DEPTS.includes(sel)) opts.push(`<option selected>${esc(sel)}</option>`);
+  return opts.join('');
+}
+function renderProfiles(rows){
+  document.getElementById('tb-profiles').innerHTML = (rows||[]).map(r=>`
+    <tr data-user="${esc(r.username)}">
+      <td>${esc(r.username)}<br>${r.has_login
+        ? '<span style="display:inline-block;font-size:11px;font-weight:700;color:#166534;background:#dcfce7;border-radius:6px;padding:1px 7px;margin-top:3px">🔑 יש כניסה</span>'
+        : '<span style="display:inline-block;font-size:11px;font-weight:700;color:#64748b;background:#f1f5f9;border-radius:6px;padding:1px 7px;margin-top:3px">אין כניסה</span>'}</td>
+      <td><input class="f-name" value="${esc(r.display_name)}"></td>
+      <td><input class="f-email" value="${esc(r.email)}" type="email"></td>
+      <td><select class="f-dept">${deptOptions(r.department)}</select></td>
+      <td><select class="f-appr">${apprOptions(r.approver_id)}</select></td>
+      <td class="c">${chk(r.is_active)}</td>
+      <td class="c">
+        <button class="secondary sm" onclick="saveProfile(this)">שמור</button>
+        <button class="secondary sm" onclick="invite(this)">${r.has_login ? '🔑 איפוס סיסמה' : '🔑 שלח סיסמה'}</button>
+        <button class="danger sm" onclick="delProfile(this)">מחק</button>
+      </td>
+    </tr>`).join('') || emptyRow(6);
+}
+async function invite(btn){
+  const tr = btn.closest('tr'), user = tr.dataset.user;
+  const email = tr.querySelector('.f-email').value.trim();
+  const msg = email
+    ? 'לשלוח סיסמה ראשונית ל־' + user + ' (' + email + ')?\nאם כבר יש לו כניסה — הסיסמה תתאפס.'
+    : 'למשתמש אין מייל — תיווצר סיסמה שתוצג לך להעברה ידנית. להמשיך?';
+  if(!confirm(msg)) return;
+  const old = btn.textContent; btn.disabled = true; btn.textContent = '...';
+  try{
+    const res = await apiPost('/exp/api/settings/profile/'+encodeURIComponent(user)+'/invite', {});
+    if(res.emailed){
+      alert('נשלחה סיסמה ראשונית למייל: ' + res.email);
+    }else{
+      alert('הסיסמה הראשונית עבור ' + user + ':\n\n' + res.password +
+        '\n\n' + (res.email ? ('שליחת המייל נכשלה — יש להעביר ידנית.' + (res.error?('\n('+res.error+')'):''))
+                            : 'אין מייל למשתמש — יש להעביר לו זאת ידנית.') +
+        '\nהמשתמש יתבקש להחליף סיסמה בכניסה הראשונה.');
+    }
+    load();
+  }catch(e){ alert(e.message || 'שגיאה'); btn.disabled = false; btn.textContent = old; }
+}
+async function addProfile(){
+  const username=val('new-prof-user'); if(!username){ alert('שם משתמש נדרש'); return; }
+  await apiPost('/exp/api/settings/profile', {
+    username, display_name:val('new-prof-name'),
+    email:val('new-prof-email'), department:val('new-prof-dept'),
+    approver_id: document.getElementById('new-prof-appr').value || null });
+  ['new-prof-user','new-prof-name','new-prof-email','new-prof-dept']
+    .forEach(id=>document.getElementById(id).value='');
+  document.getElementById('new-prof-appr').value=''; load();
+}
+async function saveProfile(btn){
+  const tr=btn.closest('tr');
+  await apiPost('/exp/api/settings/profile', {
+    username: tr.dataset.user,
+    display_name: tr.querySelector('.f-name').value,
+    email: tr.querySelector('.f-email').value,
+    department: tr.querySelector('.f-dept').value,
+    approver_id: tr.querySelector('.f-appr').value || null,
+    is_active: tr.querySelector('input[type=checkbox]').checked });
+  flash(btn);
+}
+async function delProfile(btn){
+  if(!confirm('למחוק את המשתמש?')) return;
+  await apiPost('/exp/api/settings/profile/'+
+    encodeURIComponent(btn.closest('tr').dataset.user)+'/delete',{}); load();
+}
+
+// ---------- helpers ----------
+function val(id){ return document.getElementById(id).value.trim(); }
+function emptyRow(cols){ return `<tr><td colspan="${cols+1}" class="empty">— אין רשומות —</td></tr>`; }
+function flash(btn){ const t=btn.textContent; btn.textContent='נשמר ✓';
+  setTimeout(()=>btn.textContent=t, 1200); }
+
+load().catch(e=>alert('שגיאה בטעינה: '+e.message));
+</script>
+{% endblock %}

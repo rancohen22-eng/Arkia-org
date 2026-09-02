@@ -1,8 +1,13 @@
 """Database connection and schema for the Arkia org-chart system."""
+import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "org.db"
+# Which SQLite file to use. Defaults to data/org.db (the org-chart + full app).
+# The standalone expense service (app.exp_app) sets ARKIA_DB_PATH=data/exp.db so
+# it runs against its own database, fully separate from the org tree.
+_DEFAULT_DB = Path(__file__).resolve().parent.parent / "data" / "org.db"
+DB_PATH = Path(os.environ.get("ARKIA_DB_PATH") or _DEFAULT_DB)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -35,7 +40,141 @@ CREATE TABLE IF NOT EXISTS org_nodes (
     filled_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_org_parent ON org_nodes(parent_id);
+
+-- ===== החזרי הוצאות / ריכוז אשראי (expense reimbursement & credit summary) =====
+-- A user builds a monthly report (reimbursement or credit-card summary), adds an
+-- invoice photo per line (supplier + amount pre-filled by OCR, category chosen from
+-- a managed list), then "produces a form": a branded PDF. Reimbursement reports go
+-- to an approver via a secret magic-link (no login, like the org tree); any report
+-- can also be e-mailed to a free-typed address. Settings tables are admin-managed.
+
+-- per-user profile: department is "defined by the user" (per the spec). Login still
+-- goes through users.txt / ARKIA_USERS; this only holds display/email/department.
+CREATE TABLE IF NOT EXISTS exp_profiles (
+    username TEXT PRIMARY KEY,     -- lower-cased login username
+    display_name TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    department TEXT NOT NULL DEFAULT '',
+    approver_id INTEGER,          -- the manager who approves THIS user's reports (admin-assigned)
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+
+-- expense classifications shown in the line-item dropdown (admin-managed)
+CREATE TABLE IF NOT EXISTS exp_categories (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    sort INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+
+-- approving managers a user can pick from (admin-managed name + email)
+CREATE TABLE IF NOT EXISTS exp_approvers (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS exp_accounting (      -- accounting dept — CC'd on the payment e-mail
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+
+-- department list (for dropdowns); a user's own department lives on exp_profiles
+CREATE TABLE IF NOT EXISTS exp_departments (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+
+-- one report = one month, one type, one owner
+CREATE TABLE IF NOT EXISTS exp_reports (
+    id INTEGER PRIMARY KEY,
+    type TEXT NOT NULL DEFAULT 'reimbursement',  -- 'reimbursement' | 'credit'
+    owner TEXT NOT NULL,                          -- username (lower)
+    title TEXT NOT NULL DEFAULT '',               -- report/form name shown on PDF & mail
+    month TEXT NOT NULL DEFAULT '',               -- 'YYYY-MM'
+    department TEXT NOT NULL DEFAULT '',
+    approver_id INTEGER REFERENCES exp_approvers(id),
+    status TEXT NOT NULL DEFAULT 'draft',         -- draft|pending|approved|rejected|compiled
+    approve_token TEXT UNIQUE,                     -- secret magic-link for the approver
+    decision_note TEXT,                           -- approver's reason on reject/approve
+    sent_to TEXT,                                 -- last free-typed email the form was sent to
+    sent_at TEXT,
+    total REAL NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    submitted_at TEXT,
+    decided_at TEXT,
+    viewed_at TEXT                                 -- first time the approver opened the request
+);
+
+-- one line per invoice; seq = the document number (1..N) used across the PDF
+CREATE TABLE IF NOT EXISTS exp_lines (
+    id INTEGER PRIMARY KEY,
+    report_id INTEGER NOT NULL REFERENCES exp_reports(id),
+    seq INTEGER NOT NULL DEFAULT 0,
+    supplier TEXT NOT NULL DEFAULT '',
+    amount REAL NOT NULL DEFAULT 0,
+    line_date TEXT NOT NULL DEFAULT '',           -- the expense date on the invoice (YYYY-MM-DD)
+    currency TEXT NOT NULL DEFAULT 'ILS',          -- currency code per line (ILS default)
+    note TEXT NOT NULL DEFAULT '',                 -- free-text note shown next to the line and in the PDF
+    category_id INTEGER REFERENCES exp_categories(id),
+    invoice_path TEXT,                            -- primary document (data/uploads/...; never in repo)
+    ocr_raw TEXT,                                 -- raw OCR text, for debugging/audit
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS exp_line_files (       -- additional documents attached to one line
+    id INTEGER PRIMARY KEY,
+    line_id INTEGER NOT NULL REFERENCES exp_lines(id),
+    path TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_exp_lines_report ON exp_lines(report_id);
+
+-- cached foreign-exchange rates: 1 unit of `currency` = `rate` ILS on `rate_date`.
+-- Fetched on demand (by the expense date) from an external provider and cached so
+-- a report's PDF converts foreign lines to shekels without re-hitting the network.
+CREATE TABLE IF NOT EXISTS exp_fx_rates (
+    currency  TEXT NOT NULL,               -- ISO code we converted FROM (e.g. 'USD')
+    rate_date TEXT NOT NULL,               -- 'YYYY-MM-DD' — the expense date we asked for
+    rate      REAL NOT NULL,               -- ILS per 1 unit of `currency`
+    as_of     TEXT NOT NULL DEFAULT '',    -- the market date the provider actually returned
+    source    TEXT NOT NULL DEFAULT '',    -- provider label (e.g. 'ECB')
+    fetched_at TEXT DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (currency, rate_date)
+);
+
+-- login credentials managed in-app (admin invites a user → initial password e-mailed,
+-- forced change on first login). Separate from exp_profiles (display/email/department)
+-- and from the ARKIA_USERS/users.txt env-file users, which keep working alongside it.
+CREATE TABLE IF NOT EXISTS exp_users (
+    username       TEXT PRIMARY KEY,               -- lower-cased login id (matches exp_profiles.username)
+    password_hash  TEXT NOT NULL DEFAULT '',       -- pbkdf2$... (never plaintext)
+    must_change    INTEGER NOT NULL DEFAULT 1,      -- force a password change on next login
+    is_active      INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT DEFAULT (datetime('now','localtime')),
+    password_set_at TEXT
+);
+
+-- passkeys (WebAuthn credentials) registered per user for Face ID / fingerprint login
+CREATE TABLE IF NOT EXISTS exp_webauthn (
+    id INTEGER PRIMARY KEY,
+    username TEXT NOT NULL,
+    credential_id TEXT NOT NULL UNIQUE,
+    public_key TEXT NOT NULL,
+    sign_count INTEGER NOT NULL DEFAULT 0,
+    label TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
 """
+
+# seeded once when exp_categories is empty — admin can edit/extend later
+DEFAULT_CATEGORIES = [
+    "דלק", "אש\"ל", "חניה", "כיבוד", "נסיעות", "לינה",
+    "ציוד משרדי", "טלפון ותקשורת", "אחר",
+]
 
 
 def connect(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
@@ -47,6 +186,30 @@ def connect(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     return con
 
 
+def _migrate(con: sqlite3.Connection) -> None:
+    """In-place additive migrations for databases created by an earlier schema.
+    Only ever ADDs nullable columns, so it is safe to run on every startup."""
+    cols = {r["name"] for r in con.execute("PRAGMA table_info(exp_profiles)").fetchall()}
+    if "approver_id" not in cols:
+        con.execute("ALTER TABLE exp_profiles ADD COLUMN approver_id INTEGER")
+    lcols = {r["name"] for r in con.execute("PRAGMA table_info(exp_lines)").fetchall()}
+    if "line_date" not in lcols:
+        con.execute("ALTER TABLE exp_lines ADD COLUMN line_date TEXT NOT NULL DEFAULT ''")
+    if "note" not in lcols:
+        con.execute("ALTER TABLE exp_lines ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+    if "currency" not in lcols:
+        con.execute("ALTER TABLE exp_lines ADD COLUMN currency TEXT NOT NULL DEFAULT 'ILS'")
+    rcols = {r["name"] for r in con.execute("PRAGMA table_info(exp_reports)").fetchall()}
+    if "viewed_at" not in rcols:
+        con.execute("ALTER TABLE exp_reports ADD COLUMN viewed_at TEXT")
+
+
 def init_db(con: sqlite3.Connection) -> None:
     con.executescript(SCHEMA)
+    _migrate(con)
+    if con.execute("SELECT COUNT(*) c FROM exp_categories").fetchone()["c"] == 0:
+        con.executemany(
+            "INSERT INTO exp_categories (name, sort) VALUES (?, ?)",
+            [(name, i) for i, name in enumerate(DEFAULT_CATEGORIES)],
+        )
     con.commit()

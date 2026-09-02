@@ -9,7 +9,12 @@
 
 ## סטאק ומבנה
 - **Python 3.11 + FastAPI + SQLite + Jinja2**. פורט 8020 (מקומית).
-- `app/main.py` — כל ה-routes וה-API (התחברות, אדמין, דף מילוי ציבורי, ייצוא).
+- `app/webapp.py` — **הליבה של שכבת הווב**: כל ה-route handlers + `create_app(include_org, include_exp, ...)`
+  שבונה אפליקציה עם קבוצות ה-routes הנבחרות. שתי נקודות כניסה נבנות ממנו:
+  - `app/main.py` → `app.main:app` — האפליקציה המלאה (עץ ארגוני **+** הוצאות, פורט 8020).
+  - `app/exp_app.py` → `app.exp_app:app` — **שירות הוצאות עצמאי** (`/exp` בלבד, בלי העץ),
+    עם DB/משתמשים/פורט משלו (8021). פריסה: `DEPLOY_EXP.md`. נתיב ה-DB מ-`ARKIA_DB_PATH`.
+- `app/main.py` — נקודת כניסה מלאה (עץ + הוצאות); ה-handlers עצמם ב-`webapp.py`.
 - `app/services/org.py` — שכבת הנתונים של העץ (**הליבה** — יצירה/הוספה/עריכה/השחלה/מחיקה).
 - `app/services/org_export.py` — ייצוא דף HTML עצמאי לשיתוף.
 - `app/templates/` — `base.html`, `login.html`, `org_admin.html` (התרשים + עורך), `org_fill.html` (דף מנהל).
@@ -32,6 +37,26 @@
 ## סודות — לא במאגר, לא לגעת
 `.gitignore` מוציא: `data/` (DB + `secret_key.txt`), `users.txt`, `.env`
 (`SECRET_KEY`, `SESSION_HTTPS_ONLY`, `ARKIA_USERS`). **אין להכניס סודות לקוד.**
+
+## מודול החזרי הוצאות וריכוז אשראי (`/exp`)
+מערכת שנייה באותה אפליקציה, אותו `look & feel`. עובד פותח דוח חודשי (החזר הוצאות
+או ריכוז אשראי), מצלם חשבונית → OCR ממלא ספק+סכום → בוחר סיווג. "הפק טופס" מפיק
+PDF ממותג ושולח למנהל מאשר בקישור-קסם (כמו העץ); ריכוז אשראי מרוכז ומיוצא ללא אישור.
+כל דוח ניתן גם לשליחה חופשית למייל.
+- **קבצים:** `app/services/expense.py` (שכבת הנתונים — דוחות/שורות/הגדרות),
+  `ocr.py` (Google Vision דרך `urllib`, אופציונלי — נופל להזנה ידנית),
+  `mailer.py` (SMTP+STARTTLS דרך OCI Email Delivery; ללא הגדרה נשמר ל-`data/outbox/`),
+  `pdf.py` (fpdf2 + python-bidi, גופן `app/static/fonts/DejaVuSans*.ttf` — עמוד ריכוז
+  ואז עמוד ממוספר לכל חשבונית), `passkey.py` (WebAuthn — **תלות אופציונלית**).
+  Templates: `exp_home`, `exp_report`, `exp_approve`, `exp_admin`, `exp_account`.
+- **טבלאות:** `exp_profiles` (מחלקה/מייל לכל משתמש), `exp_categories`, `exp_approvers`,
+  `exp_departments`, `exp_reports`, `exp_lines`, `exp_webauthn`. סטטוסים:
+  `draft→pending→approved/rejected` (החזר) / `compiled` (אשראי).
+- **אבטחה:** מסך ההגדרות `/exp/admin` וכל `/exp/api/settings/*` — אדמין בלבד.
+  מסך האישור `/exp/approve/{token}` ו-`/exp/api/public/*` — טוקן בלבד, בלי טוקנים/מיילים
+  בתצוגה. שאר `/exp/api/*` דורש session, ומוגבל לבעל הדוח (או אדמין).
+- **הגדרות ב-`.env`** (ראה `.env.example`): `APP_BASE_URL`, `SMTP_*`, `GOOGLE_VISION_API_KEY`,
+  `WEBAUTHN_RP_ID/ORIGIN`. הכל אופציונלי — האפליקציה רצה גם בלי אף אחד מהם.
 
 ## פרויקט אחות
 `rancohen22-eng/arkia-pricing` — מערכת התמחיר של ארקיע, שממנה הוצא המודול הזה.

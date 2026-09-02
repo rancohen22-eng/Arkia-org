@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.pdfmodal{position:fixed;inset:0;z-index:9999;background:#0f172a;display:flex;flex-direction:column}
+.pdfmodal-bar{display:flex;align-items:center;gap:8px;padding:10px 12px;
+  background:var(--brand,#14367f);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.pdfmodal-bar .pdfmodal-title{flex:1;font-weight:700;font-size:15px}
+.pdfmodal-close{background:#fff;color:var(--brand,#14367f);border:0;border-radius:9px;
+  padding:9px 16px;font-weight:800;font-size:15px;cursor:pointer}
+.pdfmodal-link{color:#fff;text-decoration:none;font-weight:600;font-size:14px;
+  padding:8px 10px;border:1px solid rgba(255,255,255,.5);border-radius:9px}
+.pdfmodal iframe{flex:1;border:0;width:100%;background:#fff}
+.pdfmodal-fallback{position:absolute;left:0;right:0;bottom:0;text-align:center;
+  color:#cbd5e1;font-size:12px;padding:6px;pointer-events:none}
+</style>
+<div class="toolbar"><a class="linkbtn" href="/exp">→ חזרה לרשימת הדוחות</a></div>
+
+<div id="reportHead"></div>
+
+<div class="cards" style="max-width:900px">
+  <section class="card">
+    <div class="rowbetween">
+      <h2>חשבוניות</h2>
+      <div id="addArea"></div>
+    </div>
+    <div id="ocrMsg" class="ocrmsg" style="display:none"></div>
+    <table class="grid" id="linesTable"><thead><tr>
+      <th style="width:44px">מס׳</th><th style="width:52px">מסמך</th><th style="width:140px">תאריך</th>
+      <th>ספק</th><th style="width:150px">סכום</th><th style="width:120px">סיווג</th><th>הערה</th><th style="width:132px"></th>
+    </tr></thead><tbody id="linesBody"></tbody></table>
+    <div class="totalbar">סה"כ: <b id="grandTotal">₪ 0.00</b></div>
+  </section>
+
+  <!-- in-app PDF viewer: our own close button, so the mobile PWA is never trapped -->
+  <div id="pdfModal" class="pdfmodal" style="display:none">
+    <div class="pdfmodal-bar">
+      <button class="pdfmodal-close" onclick="closePdf()">✕ סגור</button>
+      <span class="pdfmodal-title">תצוגת PDF</span>
+      <a class="pdfmodal-link" id="pdfDownload" href="#" download>⬇ הורד</a>
+      <a class="pdfmodal-link" id="pdfOpenNew" href="#" target="_blank" rel="noopener">↗ פתח</a>
+    </div>
+    <iframe id="pdfFrame" title="PDF" src="about:blank"></iframe>
+    <div class="pdfmodal-fallback">אם ה-PDF אינו מוצג כאן — הקש "הורד" או "פתח".</div>
+  </div>
+
+  <section class="card" id="actionsCard">
+    <h2>הפקה ושליחה</h2>
+    <div class="actions">
+      <button id="btnProduce" onclick="produce()"></button>
+      <button class="secondary" id="btnPdf" onclick="openPdf()">📄 הצג / הורד PDF</button>
+      <button id="btnCancel" class="danger" onclick="deleteReport()" style="display:none">בטל דוח</button>
+    </div>
+    <div id="shareRow" style="display:none;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)">
+      <p class="hint" style="margin:0 0 8px">שלח למנהל המאשר את קישור האישור (עוקף חסימת מייל):</p>
+      <div class="actions">
+        <button class="secondary" onclick="shareWhatsApp()">🟢 שתף בוואטסאפ</button>
+        <button class="secondary" onclick="copyApproveLink(this)">📋 העתק קישור</button>
+      </div>
+    </div>
+    <div class="sendrow">
+      <input id="sendEmail" type="email" placeholder="שליחה למייל נוסף (למשל הנהלת חשבונות)">
+      <button class="secondary" onclick="sendToEmail()">שלח למייל</button>
+    </div>
+    <p class="hint" id="sentNote"></p>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const RID = {{ rid }};
+let DATA = null;
+const STATUS = {draft:["בהכנה","st-draft"], pending:["ממתין לאישור","st-pending"],
+  approved:["אושר","st-approved"], rejected:["נדחה","st-rejected"], compiled:["רוכז","st-compiled"]};
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>(
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function money(n){ return (Number(n)||0).toLocaleString('he-IL',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+const CUR = {ILS:'₪', USD:'$', EUR:'€', GBP:'£', CHF:'CHF', JPY:'¥'};
+function curOptions(sel){
+  sel = (sel||'ILS').toUpperCase();
+  return Object.keys(CUR).map(c=>`<option value="${c}" ${c===sel?'selected':''}>${CUR[c]} ${c}</option>`).join('');
+}
+// grand total, grouped by currency (summing across currencies would be meaningless)
+function setTotal(){
+  const sums={};
+  (DATA.lines||[]).forEach(l=>{ const c=(l.currency||'ILS').toUpperCase(); sums[c]=(sums[c]||0)+(parseFloat(l.amount)||0); });
+  const parts=Object.keys(sums).map(c=>(CUR[c]||c)+' '+money(sums[c]));
+  document.getElementById('grandTotal').textContent = parts.length ? parts.join('  ·  ') : '₪ 0.00';
+}
+
+async function load(){
+  DATA = await fetch('/exp/api/report/'+RID).then(r=>r.json());
+  if(DATA.error){ alert(DATA.error); return; }
+  renderHead(); renderAdd(); renderLines(); renderActions();
+}
+
+function catOptions(sel){
+  return '<option value="">— סיווג —</option>' + (DATA.categories||[]).map(c=>
+    `<option value="${c.id}" ${c.id===sel?'selected':''}>${esc(c.name)}</option>`).join('');
+}
+
+function moveOptions(){
+  const TYPE = {reimbursement:'החזר הוצאות', credit:'ריכוז אשראי'};
+  return (DATA.move_targets||[]).map(t=>
+    `<option value="${t.id}">${esc(t.title || (TYPE[t.type]||'דוח'))} · ${esc(t.month||'')}</option>`).join('');
+}
+
+async function moveLine(sel){
+  const targetId = sel.value; if(!targetId) return;
+  const tr = sel.closest('tr'), lid = tr.dataset.id;
+  const label = sel.options[sel.selectedIndex].textContent;
+  if(!confirm('להעביר את ההוצאה לדוח: '+label+' ?\nההוצאה (על מסמכיה) תוסר מהדוח הנוכחי.')){
+    sel.value=''; return; }
+  try{
+    const res = await apiPost('/exp/api/report/'+RID+'/line/'+lid+'/move', {target_report_id: Number(targetId)});
+    if(res && res.error){ alert(res.error); sel.value=''; return; }
+    location.reload();
+  }catch(e){ alert(e.message||'שגיאה'); sel.value=''; }
+}
+
+function renderHead(){
+  const r = DATA.report, s = STATUS[r.status]||[r.status,'st-draft'];
+  const isReimb = r.type==='reimbursement';
+  const lock = r.editable ? '' : 'disabled';
+  const deptList = (DATA.departments||[]).map(x=>`<option value="${esc(x)}">`).join('');
+  document.getElementById('reportHead').innerHTML = `
+    <h1>${esc(r.title)} <span class="stbadge ${s[1]}">${s[0]}</span></h1>
+    <div class="headgrid">
+      <label>שם הטופס<input id="h-title" value="${esc(r.title)}" ${lock}></label>
+      <label>חודש<input id="h-month" type="month" value="${esc(r.month)}" ${lock}></label>
+      ${isReimb ? `
+      <label>מחלקה<input id="h-dept" list="dl" value="${esc(r.department)}" ${lock}>
+        <datalist id="dl">${deptList}</datalist></label>
+      <label>מנהל מאשר <span class="ro-tag">נקבע ע״י מנהל המערכת</span>
+        <input value="${esc(r.approver_name || '— לא הוקצה —')}" disabled></label>` : ''}
+    </div>
+    ${r.cancellable ? `<button class="secondary sm" style="margin-top:6px" onclick="convertType()">↔ המר ל${isReimb?'ריכוז אשראי':'החזר הוצאות'}</button>` : ''}
+    ${r.status==='rejected' && r.decision_note ? `<div class="rejnote">הדוח נדחה: ${esc(r.decision_note)}</div>`:''}
+    ${!r.editable ? `<p class="hint">הדוח אינו ניתן לעריכה בסטטוס זה. ניתן עדיין להוריד PDF ולשלוח במייל.</p>`:''}
+    ${r.viewed_at ? `<p class="hint" style="color:#166a3b;font-weight:700">👁️ המאשר צפה בבקשת האישור · ${esc((r.viewed_at||'').slice(0,16))}</p>`:''}
+  `;
+  if(r.editable){
+    ['h-title','h-month','h-dept'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.addEventListener('change', saveHead);
+    });
+  }
+}
+
+async function saveHead(){
+  const g=id=>{const e=document.getElementById(id);return e?e.value:undefined;};
+  await apiPost('/exp/api/report/'+RID+'/update', {
+    title:g('h-title'), month:g('h-month'), department:g('h-dept') });
+}
+
+async function convertType(){
+  const to = DATA.report.type==='reimbursement' ? 'credit' : 'reimbursement';
+  const name = to==='credit' ? 'ריכוז אשראי' : 'החזר הוצאות';
+  if(!confirm('להמיר את הדוח ל"'+name+'"? הדוח יחזור למצב טיוטה לעריכה — החשבוניות נשמרות, ותוכל לשלוח לאישור מחדש.')) return;
+  const res = await apiPost('/exp/api/report/'+RID+'/convert', {type: to});
+  if(res && res.error){ alert(res.error); return; }
+  location.reload();
+}
+
+function renderAdd(){
+  if(!DATA.report.editable){ document.getElementById('addArea').innerHTML=''; return; }
+  document.getElementById('addArea').innerHTML = `
+    <label class="camera">📷 צלם או העלה חשבונית
+      <input type="file" accept="image/*,application/pdf" style="display:none" onchange="uploadInvoice(this)">
+    </label>
+    <span class="hint" style="margin:0">חובה לצרף מסמך לכל הוצאה · ניתן לצרף כמה מסמכים לכל הוצאה (➕ בעמודת "מסמך")</span>`;
+}
+
+async function uploadInvoice(input){
+  const file = input.files[0]; if(!file) return;
+  const msg = document.getElementById('ocrMsg');
+  msg.style.display='block'; msg.textContent='מעלה וקורא חשבונית…';
+  const fd = new FormData(); fd.append('file', file);
+  try{
+    const r = await fetch('/exp/api/report/'+RID+'/line', {method:'POST',
+      headers:{'X-User': encodeURIComponent(getUser()||'אנונימי')}, body:fd});
+    const res = await r.json();
+    if(!r.ok){ throw new Error(res.error||'שגיאה'); }
+    if(res.ocr.engine==='none') msg.textContent='חשבונית נוספה. מלא ספק וסכום ידנית (זיהוי אוטומטי כבוי).';
+    else if(res.ocr.engine.indexOf('error')>=0) msg.textContent='חשבונית נוספה, אך הזיהוי האוטומטי נכשל — מלא ידנית.';
+    else msg.textContent='זוהה: ' + (res.ocr.supplier||'—') + ' · ₪ ' + money(res.ocr.amount) + ' (ניתן לתקן).';
+    input.value='';
+    syncAllRows();                 // keep already-typed values on existing rows
+    DATA.lines.push(res.line); setTotal(res.total); renderLines();
+  }catch(e){ msg.textContent='שגיאה: '+e.message; }
+}
+
+function renderLines(){
+  const editable = DATA.report.editable;
+  const body = document.getElementById('linesBody');
+  if(!DATA.lines.length){ body.innerHTML='<tr><td colspan="9" class="empty">עדיין אין חשבוניות.</td></tr>';
+    setTotal(DATA.report.total); return; }
+  const cancellable = DATA.report.cancellable;
+  body.innerHTML = DATA.lines.map(l=>`
+    <tr data-id="${l.id}">
+      <td class="c" data-label="מס׳">${l.seq}</td>
+      <td class="c" data-label="מסמך">${docCell(l)}</td>
+      <td data-label="תאריך"><input class="f-date" type="date" value="${esc(l.date||'')}" ${editable?'':'disabled'}></td>
+      <td data-label="ספק"><input class="f-sup" placeholder="שם הספק" value="${esc(l.supplier)}" ${editable?'':'disabled'}></td>
+      <td data-label="סכום"><span style="display:flex;gap:5px;align-items:center">
+        <input class="f-amt" type="number" step="0.01" value="${l.amount}" ${editable?'':'disabled'}>
+        <select class="f-cur" style="flex:none;width:auto;padding:6px 4px" ${editable?'':'disabled'}>${curOptions(l.currency)}</select>
+      </span></td>
+      <td data-label="סיווג"><select class="f-cat" ${editable?'':'disabled'}>${catOptions(l.category_id)}</select></td>
+      <td data-label="הערה"><input class="f-note" placeholder="הערה (אופציונלי)" value="${esc(l.note||'')}" ${editable?'':'disabled'}></td>
+      <td class="c actions-cell">
+        ${editable?`<button class="secondary sm" onclick="saveLine(this.closest('tr'),this)">שמור</button>`:''}
+        ${cancellable?`<button class="danger sm" onclick="delLine(this)">בטל</button>`:''}
+        ${editable && (DATA.move_targets||[]).length ?
+          `<select class="f-move sm" onchange="moveLine(this)"><option value="">↪ העבר לדוח…</option>${moveOptions()}</select>`:''}
+      </td>
+    </tr>`).join('');
+  if(editable){
+    body.querySelectorAll('tr').forEach(tr=>{
+      tr.querySelectorAll('.f-date,.f-sup,.f-amt,.f-cur,.f-cat,.f-note').forEach(el=>el.addEventListener('change',()=>saveLine(tr)));
+    });
+  }
+  setTotal(DATA.report.total);
+}
+
+// keep the in-memory model in sync with what's typed, so re-rendering (e.g. after
+// adding another invoice) never discards unsaved edits on existing rows.
+function syncRow(tr){
+  const l = DATA.lines.find(x=>String(x.id)===tr.dataset.id); if(!l) return;
+  const q=s=>tr.querySelector(s);
+  if(q('.f-date')) l.date=q('.f-date').value;
+  if(q('.f-sup'))  l.supplier=q('.f-sup').value;
+  if(q('.f-amt'))  l.amount=parseFloat(q('.f-amt').value)||0;
+  if(q('.f-cur'))  l.currency=q('.f-cur').value;
+  if(q('.f-cat'))  l.category_id=q('.f-cat').value||null;
+  if(q('.f-note')) l.note=q('.f-note').value;
+}
+function syncAllRows(){ document.querySelectorAll('#linesBody tr[data-id]').forEach(syncRow); }
+
+async function saveLine(tr, btn){
+  syncRow(tr);
+  const res = await apiPost('/exp/api/report/'+RID+'/line/'+tr.dataset.id, {
+    supplier: tr.querySelector('.f-sup').value,
+    amount: parseFloat(tr.querySelector('.f-amt').value)||0,
+    date: tr.querySelector('.f-date').value,
+    note: tr.querySelector('.f-note').value,
+    currency: tr.querySelector('.f-cur') ? tr.querySelector('.f-cur').value : 'ILS',
+    category_id: tr.querySelector('.f-cat').value || null });
+  if(res && res.error){ alert(res.error); return; }
+  setTotal();
+  if(btn){ const t=btn.textContent; btn.textContent='נשמר ✓'; setTimeout(()=>{btn.textContent=t;}, 1300); }
+}
+async function delLine(btn){
+  if(!confirm('לבטל את השורה?')) return;
+  const tr = btn.closest('tr');
+  const res = await apiPost('/exp/api/report/'+RID+'/line/'+tr.dataset.id+'/delete',{});
+  DATA = await fetch('/exp/api/report/'+RID).then(r=>r.json());
+  renderLines();
+}
+
+// the "מסמך" cell: the primary invoice, every extra document, and (when editable)
+// controls to view/remove each and to attach another document to the line.
+function docCell(l){
+  const editable = DATA.report.editable;
+  const bits = [];
+  if(l.has_image)
+    bits.push(`<a href="/exp/report/${RID}/line/${l.id}/image" target="_blank" title="מסמך 1">📄</a>`);
+  (l.extra_files||[]).forEach((f,i)=>{
+    bits.push(`<a href="/exp/report/${RID}/line/${l.id}/file/${f.id}" target="_blank" title="מסמך ${i+2}">📄</a>`
+      + (editable?`<a href="#" onclick="delLineFile(event,${l.id},${f.id})" title="הסר מסמך" style="color:#dc2626;text-decoration:none;font-size:11px">✕</a>`:''));
+  });
+  if(!bits.length) bits.push('—');
+  if(editable)
+    bits.push(`<a href="#" onclick="addLineDoc(event,${l.id})" title="הוסף מסמך" style="text-decoration:none">➕</a>`);
+  return bits.join(' ');
+}
+function addLineDoc(ev, lid){
+  ev.preventDefault();
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*,application/pdf';
+  inp.onchange=async ()=>{
+    if(!inp.files[0]) return;
+    syncAllRows();
+    const fd=new FormData(); fd.append('file', inp.files[0]);
+    const res=await fetch('/exp/api/report/'+RID+'/line/'+lid+'/file',{method:'POST',body:fd}).then(r=>r.json());
+    if(res && res.error){ alert(res.error); return; }
+    const l=DATA.lines.find(x=>x.id===lid);
+    if(l && res.line) l.extra_files=res.line.extra_files;
+    renderLines();
+  };
+  inp.click();
+}
+async function delLineFile(ev, lid, fid){
+  ev.preventDefault();
+  if(!confirm('למחוק את המסמך?')) return;
+  syncAllRows();
+  const res=await apiPost('/exp/api/report/'+RID+'/line/'+lid+'/file/'+fid+'/delete',{});
+  if(res && res.error){ alert(res.error); return; }
+  const l=DATA.lines.find(x=>x.id===lid);
+  if(l) l.extra_files=(l.extra_files||[]).filter(f=>f.id!==fid);
+  renderLines();
+}
+
+function openPdf(){
+  const view = '/exp/report/'+RID+'/pdf?view=1';
+  document.getElementById('pdfFrame').src = view;
+  document.getElementById('pdfOpenNew').href = view;
+  document.getElementById('pdfDownload').href = '/exp/report/'+RID+'/pdf';
+  document.getElementById('pdfModal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function closePdf(){
+  document.getElementById('pdfModal').style.display = 'none';
+  document.getElementById('pdfFrame').src = 'about:blank';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closePdf(); });
+// <main> runs a transform animation → it would contain position:fixed and hide the
+// viewer's close button under the header. Lift the modal out to <body> so it truly
+// covers the screen (incl. the header) and the ✕ close button is always reachable.
+document.body.appendChild(document.getElementById('pdfModal'));
+
+function renderActions(){
+  const r = DATA.report;
+  const btn = document.getElementById('btnProduce');
+  if(!r.editable){ btn.style.display='none'; }
+  else{
+    btn.style.display='';
+    btn.textContent = r.type==='credit' ? 'הפק טופס' : 'הפק טופס ושלח לאישור';
+  }
+  document.getElementById('btnCancel').style.display = r.cancellable ? '' : 'none';
+  document.getElementById('shareRow').style.display = DATA.approve_url ? '' : 'none';
+  document.getElementById('sentNote').textContent =
+    r.sent_to ? ('נשלח לאחרונה אל ' + r.sent_to) : '';
+}
+
+function shareWhatsApp(){
+  if(!DATA.approve_url) return;
+  const r = DATA.report;
+  const hello = r.approver_name ? ('שלום ' + r.approver_name + ',') : 'שלום,';
+  const msg = hello + ' הוגש לאישורך דוח "' + r.title + '"'
+    + (r.owner_name ? ' מאת ' + r.owner_name : '') + '.\n'
+    + 'לצפייה ואישור: ' + DATA.approve_url;
+  window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+}
+async function copyApproveLink(btn){
+  if(!DATA.approve_url) return;
+  try{ await navigator.clipboard.writeText(DATA.approve_url); }
+  catch(e){ prompt('העתק את הקישור:', DATA.approve_url); return; }
+  const t = btn.textContent; btn.textContent = 'הועתק ✓'; setTimeout(()=>{btn.textContent=t;}, 1300);
+}
+
+async function deleteReport(){
+  if(!confirm('לבטל ולמחוק את הדוח כולו? פעולה זו אינה הפיכה.')) return;
+  const res = await apiPost('/exp/api/report/'+RID+'/delete', {});
+  if(res && res.error){ alert(res.error); return; }
+  location.href = '/exp';
+}
+
+async function produce(){
+  const r = DATA.report;
+  if(!DATA.lines.length){ alert('אין חשבוניות בדוח'); return; }
+  if(r.type==='reimbursement' && !r.approver_id){
+    alert('לא הוקצה לך מנהל מאשר. פנה למנהל המערכת כדי שיקצה לך מאשר בהגדרות.'); return; }
+  const verb = r.type==='credit' ? 'להפיק את הטופס?' : 'להפיק ולשלוח לאישור המנהל?';
+  if(!confirm(verb)) return;
+  const res = await apiPost('/exp/api/report/'+RID+'/submit', {});
+  if(res.error){ alert(res.error); return; }
+  if(r.type==='credit') alert('הטופס הופק. ניתן להוריד PDF או לשלוח במייל.');
+  else if(res.mail_sent) alert('הטופס נשלח לאישור המנהל במייל.');
+  else alert('הדוח הוגש לאישור (סטטוס: ממתין לאישור), אך שליחת המייל למנהל לא הצליחה.\n'
+    + 'שלח למנהל את קישור האישור בעזרת הכפתור "שתף בוואטסאפ" שיופיע כעת.');
+  load();
+}
+
+async function sendToEmail(){
+  const email = document.getElementById('sendEmail').value.trim();
+  if(email.indexOf('@')<0){ alert('כתובת מייל לא תקינה'); return; }
+  const res = await apiPost('/exp/api/report/'+RID+'/send', {email});
+  if(res.error){ alert(res.error); return; }
+  if(res.mail_sent){
+    alert('נשלח אל ' + email);
+    document.getElementById('sentNote').textContent = 'נשלח לאחרונה אל ' + email;
+  } else {
+    alert('שליחת המייל לא הצליחה.' + (res.mail_error ? '\n(' + res.mail_error + ')' : ''));
+  }
+}
+
+load().catch(e=>alert('שגיאה: '+e.message));
+</script>
+{% endblock %}
