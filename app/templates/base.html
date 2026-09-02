@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }} — {{ request.app.state.site_name }}</title>
 <link rel="stylesheet" href="/static/fonts/assistant.css?v=1">
-<link rel="stylesheet" href="/static/css/app.css?v=exp6">
+<link rel="stylesheet" href="/static/css/app.css?v=exp7">
 <link rel="manifest" href="/static/manifest.webmanifest">
 <meta name="theme-color" content="#14367f">
 <link rel="icon" href="/static/icons/favicon-64.png" sizes="64x64" type="image/png">
@@ -23,6 +23,7 @@
   </a>
   <nav>
     <a href="/exp">🧾 החזרי הוצאות</a>
+    <a href="/exp/approvals">✍️ ממתין לחתימתי<span id="navApprCount" class="nav-badge" hidden></span></a>
     {% if request.app.state.include_org %}<a href="/">🌳 עץ ארגוני</a>{% endif %}
     {% if passkey_enabled() %}<a href="/exp/account">🔐 החשבון שלי</a>{% endif %}
     {% if is_admin(request.session.get('user','')) %}<a href="/exp/admin">⚙️ הגדרות</a>{% endif %}
@@ -36,6 +37,13 @@
 const CURRENT_USER = {{ request.session.get('user', '') | tojson }};
 function getUser(){ return CURRENT_USER || ''; }
 document.getElementById('userName').textContent = getUser() || 'אורח';
+// show a count badge on the "awaiting my signature" tab (approvers only)
+if (CURRENT_USER) {
+  fetch('/exp/api/my-approvals', {cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{
+    const n = d && d.items ? d.items.length : 0, b = document.getElementById('navApprCount');
+    if (b && n > 0){ b.textContent = n; b.hidden = false; }
+  }).catch(()=>{});
+}
 async function apiPost(url, data){
   const r = await fetch(url, {method:'POST',
     headers: {'Content-Type':'application/json', 'X-User': encodeURIComponent(getUser() || 'אנונימי')},

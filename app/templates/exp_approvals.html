@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>ממתין לחתימתי</h1>
+<p class="hint">דוחות החזר הוצאות שהוגשו לאישורך כמנהל מאשר. לחיצה על "פתח לחתימה" תעביר
+  אותך למסך האישור, שם ניתן לאשר או לדחות את הדוח.</p>
+
+<div class="cards" style="max-width:820px">
+  <section class="card">
+    <div id="list"><p class="hint">טוען…</p></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g, c => (
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function money(n){ return (Number(n)||0).toLocaleString('he-IL',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+async function load(){
+  const el = document.getElementById('list');
+  let d;
+  try { d = await fetch('/exp/api/my-approvals', {cache:'no-store'}).then(r=>r.json()); }
+  catch(e){ el.innerHTML = '<p class="hint">שגיאה בטעינה.</p>'; return; }
+  const items = d.items || [];
+  if(!items.length){
+    el.innerHTML = '<div class="empty" style="padding:22px">אין דוחות הממתינים לחתימתך כרגע.'
+      + (d.email ? '' : '<br><span class="hint">לא מוגדר מייל למשתמש שלך — פנה למנהל המערכת.</span>')
+      + '</div>';
+    return;
+  }
+  el.innerHTML = `<table class="grid"><thead><tr>
+      <th>טופס</th><th>עובד</th><th>מחלקה</th><th>חודש</th>
+      <th style="width:120px">סכום</th><th style="width:150px">הוגש</th><th style="width:130px"></th>
+    </tr></thead><tbody>${items.map(rowHtml).join('')}</tbody></table>`;
+}
+
+function rowHtml(r){
+  return `<tr>
+    <td>${esc(r.title)}${r.viewed_at?'':' <span class="hint" style="color:#b45309">• טרם נצפה</span>'}</td>
+    <td>${esc(r.owner_name||'')}</td>
+    <td>${esc(r.department||'')}</td>
+    <td class="c">${esc(r.month||'')}</td>
+    <td style="text-align:left;white-space:nowrap">₪ ${money(r.total)}</td>
+    <td class="c">${esc((r.submitted_at||'').slice(0,16))}</td>
+    <td class="c">${r.approve_url
+      ? `<a class="linkbtn" href="${esc(r.approve_url)}">✍️ פתח לחתימה</a>` : '—'}</td>
+  </tr>`;
+}
+load();
+</script>
+{% endblock %}

@@ -403,6 +403,39 @@ def delete_line(con, rid: int, lid: int) -> list:
     return paths
 
 
+def move_line(con, lid: int, from_rid: int, to_rid: int) -> bool:
+    """Move one line (with its attached documents) from one report to another.
+
+    Both reports' editability / ownership are enforced by the caller. The line's
+    id is unchanged, so exp_line_files (keyed by line_id) follow automatically; it
+    just gets a fresh seq at the end of the target, and both reports are
+    re-sequenced / re-totalled."""
+    line = con.execute("SELECT * FROM exp_lines WHERE id=? AND report_id=?",
+                       (lid, from_rid)).fetchone()
+    if line is None or from_rid == to_rid:
+        return False
+    nxt = con.execute("SELECT COALESCE(MAX(seq),0)+1 n FROM exp_lines WHERE report_id=?",
+                      (to_rid,)).fetchone()["n"]
+    con.execute("UPDATE exp_lines SET report_id=?, seq=? WHERE id=?", (to_rid, nxt, lid))
+    _resequence(con, from_rid)
+    _recompute_total(con, from_rid)
+    _recompute_total(con, to_rid)
+    con.commit()
+    return True
+
+
+def reports_pending_approval_for_email(con, email: str):
+    """Pending reimbursement reports whose assigned approver's e-mail matches
+    ``email`` — the 'awaiting my signature' inbox for a logged-in approver."""
+    e = (email or "").strip().lower()
+    if not e:
+        return []
+    return con.execute(
+        "SELECT r.* FROM exp_reports r JOIN exp_approvers a ON a.id=r.approver_id "
+        "WHERE r.status='pending' AND r.type='reimbursement' AND lower(a.email)=? "
+        "ORDER BY r.submitted_at, r.id", (e,)).fetchall()
+
+
 def set_line_image(con, rid: int, lid: int, path: str) -> None:
     con.execute("UPDATE exp_lines SET invoice_path=? WHERE id=? AND report_id=?",
                 (path, lid, rid))

@@ -757,6 +757,32 @@ def _register_exp(app: FastAPI) -> None:
         con.close()
         return data
 
+    # ---- "awaiting my signature": reports a logged-in approver needs to sign ----
+
+    @app.get("/exp/approvals", response_class=HTMLResponse)
+    def exp_approvals_page(request: Request):
+        return templates.TemplateResponse(request, "exp_approvals.html",
+                                          {"title": "ממתין לחתימתי"})
+
+    @app.get("/exp/api/my-approvals")
+    def exp_api_my_approvals(request: Request):
+        con = connect()
+        user = get_user(request)
+        prof = expense.get_profile(con, user)
+        email = (prof["email"] if prof else "") or ""
+        items = []
+        for r in expense.reports_pending_approval_for_email(con, email):
+            rep = expense.report_dict(con, r)
+            items.append({
+                "id": rep["id"], "title": rep["title"], "owner_name": rep["owner_name"],
+                "department": rep["department"], "month": rep["month"],
+                "total": rep["total"], "submitted_at": rep["submitted_at"],
+                "viewed_at": rep["viewed_at"],
+                "approve_url": f"/exp/approve/{r['approve_token']}" if r["approve_token"] else None,
+            })
+        con.close()
+        return {"email": email, "items": items}
+
     @app.post("/exp/api/report")
     async def exp_api_report_create(request: Request):
         body = await request.json()
@@ -830,6 +856,12 @@ def _register_exp(app: FastAPI) -> None:
             "departments": [r["name"] for r in expense.list_departments(con, active_only=True)],
             "ocr_enabled": config.ocr_configured(),
         }
+        # other open (editable) reports of this owner — targets for moving a line
+        if report["status"] in expense.EDITABLE_STATUSES:
+            data["move_targets"] = [
+                {"id": t["id"], "title": t["title"], "month": t["month"], "type": t["type"]}
+                for t in expense.list_reports(con, report["owner"])
+                if t["id"] != rid and t["status"] in expense.EDITABLE_STATUSES]
         # the owner may share the approver's magic-link directly (e.g. via WhatsApp),
         # useful when e-mail to the corporate domain is filtered
         if report["type"] == expense.REIMBURSEMENT and report["approve_token"]:
@@ -938,6 +970,34 @@ def _register_exp(app: FastAPI) -> None:
             except OSError:
                 pass
         return {"ok": True, "total": total}
+
+    @app.post("/exp/api/report/{rid}/line/{lid}/move")
+    async def exp_api_line_move(rid: int, lid: int, request: Request):
+        """Move a line to another open report of the same owner (both must be
+        editable — a closed/approved report can't give or receive lines)."""
+        body = await request.json()
+        try:
+            target_id = int(body.get("target_report_id"))
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "יעד לא תקין"}, status_code=400)
+        con = connect()
+        source = expense.get_report(con, rid)
+        target = expense.get_report(con, target_id)
+        if not _owns(request, source) or not _owns(request, target):
+            con.close()
+            return JSONResponse({"error": "אין הרשאה"}, status_code=403)
+        if target["owner"] != source["owner"]:
+            con.close()
+            return JSONResponse({"error": "ניתן להעביר רק בין דוחות של אותו עובד"}, status_code=403)
+        if source["status"] not in expense.EDITABLE_STATUSES or \
+           target["status"] not in expense.EDITABLE_STATUSES:
+            con.close()
+            return JSONResponse({"error": "ניתן להעביר רק בין דוחות פתוחים (לא סגורים)"}, status_code=409)
+        ok = expense.move_line(con, lid, rid, target_id)
+        con.close()
+        if not ok:
+            return JSONResponse({"error": "השורה לא נמצאה או שהיעד זהה למקור"}, status_code=404)
+        return {"ok": True}
 
     @app.get("/exp/report/{rid}/line/{lid}/image")
     def exp_line_image(rid: int, lid: int, request: Request):

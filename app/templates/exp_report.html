@@ -99,6 +99,25 @@ function catOptions(sel){
     `<option value="${c.id}" ${c.id===sel?'selected':''}>${esc(c.name)}</option>`).join('');
 }
 
+function moveOptions(){
+  const TYPE = {reimbursement:'החזר הוצאות', credit:'ריכוז אשראי'};
+  return (DATA.move_targets||[]).map(t=>
+    `<option value="${t.id}">${esc(t.title || (TYPE[t.type]||'דוח'))} · ${esc(t.month||'')}</option>`).join('');
+}
+
+async function moveLine(sel){
+  const targetId = sel.value; if(!targetId) return;
+  const tr = sel.closest('tr'), lid = tr.dataset.id;
+  const label = sel.options[sel.selectedIndex].textContent;
+  if(!confirm('להעביר את ההוצאה לדוח: '+label+' ?\nההוצאה (על מסמכיה) תוסר מהדוח הנוכחי.')){
+    sel.value=''; return; }
+  try{
+    const res = await apiPost('/exp/api/report/'+RID+'/line/'+lid+'/move', {target_report_id: Number(targetId)});
+    if(res && res.error){ alert(res.error); sel.value=''; return; }
+    location.reload();
+  }catch(e){ alert(e.message||'שגיאה'); sel.value=''; }
+}
+
 function renderHead(){
   const r = DATA.report, s = STATUS[r.status]||[r.status,'st-draft'];
   const isReimb = r.type==='reimbursement';
@@ -191,6 +210,8 @@ function renderLines(){
       <td class="c actions-cell">
         ${editable?`<button class="secondary sm" onclick="saveLine(this.closest('tr'),this)">שמור</button>`:''}
         ${cancellable?`<button class="danger sm" onclick="delLine(this)">בטל</button>`:''}
+        ${editable && (DATA.move_targets||[]).length ?
+          `<select class="f-move sm" onchange="moveLine(this)"><option value="">↪ העבר לדוח…</option>${moveOptions()}</select>`:''}
       </td>
     </tr>`).join('');
   if(editable){
